@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -6,14 +6,15 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Send, Hash, Lock, Users, Circle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface Message {
   id: string;
   username: string;
-  text: string;
-  timestamp: Date;
-  room: string;
-  type: 'message' | 'system';
+  content: string;
+  created_at: string;
+  room_id: string;
 }
 
 interface Room {
@@ -24,11 +25,10 @@ interface Room {
   unreadCount?: number;
 }
 
-interface User {
-  id: string;
+interface UserPresence {
   username: string;
-  isOnline: boolean;
-  isTyping: boolean;
+  is_typing: boolean;
+  last_seen: string;
 }
 
 export const Chat: React.FC = () => {
@@ -37,18 +37,18 @@ export const Chat: React.FC = () => {
   const [currentRoom, setCurrentRoom] = useState('general');
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([
+  const [rooms] = useState<Room[]>([
     { id: 'general', name: 'general', type: 'public' },
     { id: 'random', name: 'random', type: 'public' },
     { id: 'tech', name: 'tech', type: 'public' },
   ]);
-  const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  const [isTyping, setIsTyping] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const messageInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = () => {
@@ -59,119 +59,224 @@ export const Chat: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
+  // Load messages when joining or switching rooms
+  useEffect(() => {
+    if (isJoined) {
+      loadMessages();
+      updatePresence(false);
+    }
+  }, [isJoined, currentRoom]);
+
+  // Set up real-time subscriptions
+  useEffect(() => {
+    if (!isJoined) return;
+
+    // Subscribe to new messages
+    const messageChannel = supabase
+      .channel('messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `room_id=eq.${currentRoom}`
+        },
+        (payload) => {
+          const newMsg = payload.new as Message;
+          setMessages(prev => [...prev, newMsg]);
+          scrollToBottom();
+        }
+      )
+      .subscribe();
+
+    // Subscribe to presence updates
+    const presenceChannel = supabase
+      .channel('presence')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_presence',
+          filter: `room_id=eq.${currentRoom}`
+        },
+        () => {
+          loadPresence();
+        }
+      )
+      .subscribe();
+
+    // Update presence periodically
+    const presenceInterval = setInterval(() => {
+      updatePresence(false);
+    }, 30000); // Every 30 seconds
+
+    return () => {
+      supabase.removeChannel(messageChannel);
+      supabase.removeChannel(presenceChannel);
+      clearInterval(presenceInterval);
+      // Clear presence when leaving
+      clearPresence();
+    };
+  }, [isJoined, currentRoom, username]);
+
+  const loadMessages = async () => {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('room_id', currentRoom)
+      .order('created_at', { ascending: true })
+      .limit(100);
+
+    if (error) {
+      toast({
+        title: "Error loading messages",
+        description: error.message,
+        variant: "destructive"
+      });
+    } else {
+      setMessages(data || []);
+      scrollToBottom();
+    }
+  };
+
+  const loadPresence = async () => {
+    const { data } = await supabase
+      .from('user_presence')
+      .select('*')
+      .eq('room_id', currentRoom)
+      .gte('last_seen', new Date(Date.now() - 60000).toISOString()); // Active in last minute
+
+    if (data) {
+      const online = data.map(p => p.username).filter(u => u !== username);
+      setOnlineUsers(online);
+      const typing = data.filter(p => p.is_typing && p.username !== username).map(p => p.username);
+      setTypingUsers(typing);
+    }
+  };
+
+  const updatePresence = async (isTyping: boolean) => {
+    if (!isJoined) return;
+
+    await supabase
+      .from('user_presence')
+      .upsert({
+        room_id: currentRoom,
+        username: username,
+        is_typing: isTyping,
+        last_seen: new Date().toISOString()
+      }, {
+        onConflict: 'room_id,username'
+      });
+  };
+
+  const clearPresence = async () => {
+    if (username && currentRoom) {
+      await supabase
+        .from('user_presence')
+        .delete()
+        .eq('room_id', currentRoom)
+        .eq('username', username);
+    }
+  };
+
   // Join chat
-  const handleJoin = () => {
+  const handleJoin = async () => {
     if (username.trim()) {
       setIsJoined(true);
-      const systemMessage: Message = {
-        id: Date.now().toString(),
-        username: 'System',
-        text: `${username} joined the chat`,
-        timestamp: new Date(),
-        room: currentRoom,
-        type: 'system',
-      };
-      setMessages([systemMessage]);
       
-      // Simulate some online users
-      setOnlineUsers([
-        { id: '1', username, isOnline: true, isTyping: false },
-        { id: '2', username: 'Alice', isOnline: true, isTyping: false },
-        { id: '3', username: 'Bob', isOnline: true, isTyping: false },
-      ]);
+      // Send join message
+      const joinMessage = {
+        username: 'System',
+        content: `${username} joined the chat`,
+        room_id: currentRoom
+      };
+      
+      const { error } = await supabase
+        .from('messages')
+        .insert(joinMessage);
+
+      if (error) {
+        toast({
+          title: "Error joining room",
+          description: error.message,
+          variant: "destructive"
+        });
+        setIsJoined(false);
+      }
     }
   };
 
   // Send message
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (message.trim() && username) {
-      const newMessage: Message = {
-        id: Date.now().toString(),
+      const messageData = {
         username,
-        text: message,
-        timestamp: new Date(),
-        room: currentRoom,
-        type: 'message',
+        content: message,
+        room_id: currentRoom
       };
       
-      setMessages(prev => [...prev, newMessage]);
       setMessage('');
       messageInputRef.current?.focus();
       
-      // Simulate receiving a response after a delay
-      if (Math.random() > 0.7) {
-        setTimeout(() => {
-          const botMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            username: Math.random() > 0.5 ? 'Alice' : 'Bob',
-            text: getRandomResponse(),
-            timestamp: new Date(),
-            room: currentRoom,
-            type: 'message',
-          };
-          setMessages(prev => [...prev, botMessage]);
-        }, 1000 + Math.random() * 2000);
+      const { error } = await supabase
+        .from('messages')
+        .insert(messageData);
+
+      if (error) {
+        toast({
+          title: "Error sending message",
+          description: error.message,
+          variant: "destructive"
+        });
+        setMessage(messageData.content); // Restore message on error
       }
     }
-  };
-
-  // Get random response for demo
-  const getRandomResponse = () => {
-    const responses = [
-      'That\'s interesting!',
-      'I agree with that',
-      'Tell me more about it',
-      'Cool! 😊',
-      'Thanks for sharing',
-      'Great point!',
-      'Absolutely!',
-      'I was thinking the same thing',
-    ];
-    return responses[Math.floor(Math.random() * responses.length)];
   };
 
   // Handle typing indicator
   const handleTyping = () => {
-    if (!isTyping) {
-      setIsTyping(true);
-      // Simulate showing typing to others
-      if (Math.random() > 0.8) {
-        const randomUser = onlineUsers[Math.floor(Math.random() * onlineUsers.length)];
-        if (randomUser && randomUser.username !== username) {
-          setTypingUsers(prev => [...prev, randomUser.username]);
-          setTimeout(() => {
-            setTypingUsers(prev => prev.filter(u => u !== randomUser.username));
-          }, 3000);
-        }
+    if (isJoined && message.length > 0) {
+      updatePresence(true);
+      
+      // Clear previous timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
       }
+      
+      // Stop typing after 2 seconds of inactivity
+      typingTimeoutRef.current = setTimeout(() => {
+        updatePresence(false);
+      }, 2000);
     }
-    
-    clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => {
-      setIsTyping(false);
-    }, 1000);
   };
 
   // Switch room
-  const switchRoom = (roomId: string) => {
+  const switchRoom = async (roomId: string) => {
+    // Clear presence from old room
+    await clearPresence();
+    
     setCurrentRoom(roomId);
-    const systemMessage: Message = {
-      id: Date.now().toString(),
+    
+    // Send system message
+    const systemMessage = {
       username: 'System',
-      text: `You switched to #${roomId}`,
-      timestamp: new Date(),
-      room: roomId,
-      type: 'system',
+      content: `${username} switched to #${roomId}`,
+      room_id: roomId
     };
-    setMessages(prev => [...prev, systemMessage]);
+    
+    await supabase
+      .from('messages')
+      .insert(systemMessage);
   };
 
   // Format timestamp
-  const formatTime = (date: Date) => {
-    return new Intl.DateTimeFormat('en-US', {
+  const formatTime = (dateString: string) => {
+    return new Date(dateString).toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
-    }).format(date);
+    });
   };
 
   if (!isJoined) {
@@ -206,8 +311,9 @@ export const Chat: React.FC = () => {
               </Button>
             </div>
             
-            <div className="text-center text-sm text-muted-foreground">
+            <div className="text-center text-sm text-muted-foreground space-y-2">
               <p>Connect with others in real-time</p>
+              <p className="text-xs">Share this URL with others: <span className="text-primary">{window.location.origin}</span></p>
             </div>
           </div>
         </Card>
@@ -251,16 +357,21 @@ export const Chat: React.FC = () => {
         <div className="border-t border-sidebar-border p-4">
           <div className="flex items-center gap-2 mb-3">
             <Users className="w-4 h-4 text-sidebar-foreground/60" />
-            <h3 className="text-sm font-medium text-sidebar-foreground">Online Users</h3>
+            <h3 className="text-sm font-medium text-sidebar-foreground">
+              Online ({onlineUsers.length + 1})
+            </h3>
           </div>
           <div className="space-y-2">
-            {onlineUsers.slice(0, 5).map((user) => (
-              <div key={user.id} className="flex items-center gap-2">
-                <Circle className={cn(
-                  "w-2 h-2 fill-current",
-                  user.isOnline ? "text-success" : "text-muted-foreground"
-                )} />
-                <span className="text-sm text-sidebar-foreground/80">{user.username}</span>
+            <div className="flex items-center gap-2">
+              <Circle className="w-2 h-2 fill-current text-success" />
+              <span className="text-sm text-sidebar-foreground/80 font-medium">
+                {username} (You)
+              </span>
+            </div>
+            {onlineUsers.slice(0, 4).map((user, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <Circle className="w-2 h-2 fill-current text-success" />
+                <span className="text-sm text-sidebar-foreground/80">{user}</span>
               </div>
             ))}
           </div>
@@ -288,62 +399,63 @@ export const Chat: React.FC = () => {
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
-        <div className="h-16 border-b border-border bg-card px-6 flex items-center">
+        <div className="h-16 border-b border-border bg-card px-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Hash className="w-5 h-5 text-muted-foreground" />
             <h1 className="text-xl font-semibold">{currentRoom}</h1>
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Share URL: {window.location.origin}
           </div>
         </div>
 
         {/* Messages */}
         <ScrollArea className="flex-1 p-6">
           <div className="space-y-4 max-w-4xl mx-auto">
-            {messages
-              .filter(msg => msg.room === currentRoom)
-              .map((msg) => (
-                <div
-                  key={msg.id}
-                  className={cn(
-                    "flex gap-3 animate-slide-in-up",
-                    msg.type === 'system' && "justify-center"
-                  )}
-                >
-                  {msg.type === 'system' ? (
-                    <div className="text-sm text-muted-foreground bg-muted/50 px-3 py-1 rounded-full">
-                      {msg.text}
-                    </div>
-                  ) : (
-                    <>
-                      <Avatar className="h-8 w-8 flex-shrink-0">
-                        <AvatarFallback className={cn(
-                          "text-xs",
-                          msg.username === username 
-                            ? "bg-primary text-primary-foreground" 
-                            : "bg-secondary text-secondary-foreground"
-                        )}>
-                          {msg.username.slice(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-baseline gap-2">
-                          <span className="font-medium text-sm">{msg.username}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatTime(msg.timestamp)}
-                          </span>
-                        </div>
-                        <div className={cn(
-                          "inline-block px-4 py-2 rounded-2xl",
-                          msg.username === username
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-secondary text-secondary-foreground"
-                        )}>
-                          {msg.text}
-                        </div>
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={cn(
+                  "flex gap-3 animate-slide-in-up",
+                  msg.username === 'System' && "justify-center"
+                )}
+              >
+                {msg.username === 'System' ? (
+                  <div className="text-sm text-muted-foreground bg-muted/50 px-3 py-1 rounded-full">
+                    {msg.content}
+                  </div>
+                ) : (
+                  <>
+                    <Avatar className="h-8 w-8 flex-shrink-0">
+                      <AvatarFallback className={cn(
+                        "text-xs",
+                        msg.username === username 
+                          ? "bg-primary text-primary-foreground" 
+                          : "bg-secondary text-secondary-foreground"
+                      )}>
+                        {msg.username.slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-medium text-sm">{msg.username}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatTime(msg.created_at)}
+                        </span>
                       </div>
-                    </>
-                  )}
-                </div>
-              ))}
+                      <div className={cn(
+                        "inline-block px-4 py-2 rounded-2xl",
+                        msg.username === username
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-secondary-foreground"
+                      )}>
+                        {msg.content}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
             
             {/* Typing indicator */}
             {typingUsers.length > 0 && (
