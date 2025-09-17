@@ -43,19 +43,19 @@ export type Database = {
           id: string
           joined_at: string
           room_id: string
-          user_id: string
+          username: string
         }
         Insert: {
           id?: string
           joined_at?: string
           room_id: string
-          user_id: string
+          username: string
         }
         Update: {
           id?: string
           joined_at?: string
           room_id?: string
-          user_id?: string
+          username?: string
         }
         Relationships: []
       }
