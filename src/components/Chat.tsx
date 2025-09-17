@@ -184,6 +184,20 @@ export const Chat: React.FC = () => {
   // Join chat
   const handleJoin = async () => {
     if (username.trim()) {
+      // First, add user to the general room
+      const { error: roomError } = await supabase
+        .from('room_members')
+        .insert([{ room_id: currentRoom, username: username.trim() }]);
+      
+      if (roomError && !roomError.message.includes('duplicate')) {
+        toast({
+          title: "Error joining room",
+          description: roomError.message,
+          variant: "destructive"
+        });
+        return;
+      }
+      
       setIsJoined(true);
       
       // Send join message
@@ -199,11 +213,10 @@ export const Chat: React.FC = () => {
 
       if (error) {
         toast({
-          title: "Error joining room",
+          title: "Error sending join message",
           description: error.message,
           variant: "destructive"
         });
-        setIsJoined(false);
       }
     }
   };
@@ -256,6 +269,20 @@ export const Chat: React.FC = () => {
   const switchRoom = async (roomId: string) => {
     // Clear presence from old room
     await clearPresence();
+    
+    // Join the new room
+    const { error: roomError } = await supabase
+      .from('room_members')
+      .insert([{ room_id: roomId, username: username }]);
+    
+    if (roomError && !roomError.message.includes('duplicate')) {
+      toast({
+        title: "Error joining room",
+        description: roomError.message,
+        variant: "destructive"
+      });
+      return;
+    }
     
     setCurrentRoom(roomId);
     
