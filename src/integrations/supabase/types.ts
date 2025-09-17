@@ -38,6 +38,27 @@ export type Database = {
         }
         Relationships: []
       }
+      room_members: {
+        Row: {
+          id: string
+          joined_at: string
+          room_id: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          joined_at?: string
+          room_id: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          joined_at?: string
+          room_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_presence: {
         Row: {
           id: string
@@ -70,6 +91,10 @@ export type Database = {
       cleanup_old_presence: {
         Args: Record<PropertyKey, never>
         Returns: undefined
+      }
+      is_room_member: {
+        Args: { p_room_id: string; p_user_id: string }
+        Returns: boolean
       }
     }
     Enums: {
