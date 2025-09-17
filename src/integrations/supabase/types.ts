@@ -20,6 +20,7 @@ export type Database = {
           created_at: string
           id: string
           room_id: string
+          user_id: string | null
           username: string
         }
         Insert: {
@@ -27,6 +28,7 @@ export type Database = {
           created_at?: string
           id?: string
           room_id?: string
+          user_id?: string | null
           username: string
         }
         Update: {
@@ -34,6 +36,28 @@ export type Database = {
           created_at?: string
           id?: string
           room_id?: string
+          user_id?: string | null
+          username?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          id: string
+          updated_at: string
+          username: string
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          updated_at?: string
+          username: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          updated_at?: string
           username?: string
         }
         Relationships: []
@@ -43,19 +67,19 @@ export type Database = {
           id: string
           joined_at: string
           room_id: string
-          username: string
+          user_id: string
         }
         Insert: {
           id?: string
           joined_at?: string
           room_id: string
-          username: string
+          user_id: string
         }
         Update: {
           id?: string
           joined_at?: string
           room_id?: string
-          username?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -65,6 +89,7 @@ export type Database = {
           is_typing: boolean | null
           last_seen: string
           room_id: string
+          user_id: string | null
           username: string
         }
         Insert: {
@@ -72,6 +97,7 @@ export type Database = {
           is_typing?: boolean | null
           last_seen?: string
           room_id: string
+          user_id?: string | null
           username: string
         }
         Update: {
@@ -79,6 +105,7 @@ export type Database = {
           is_typing?: boolean | null
           last_seen?: string
           room_id?: string
+          user_id?: string | null
           username?: string
         }
         Relationships: []
