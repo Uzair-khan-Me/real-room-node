@@ -4,12 +4,21 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Send, Hash, Lock, Users, Circle, LogOut } from 'lucide-react';
+import { Send, Hash, Lock, Users, Circle, LogOut, Plus, UserPlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { User, Session } from '@supabase/supabase-js';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from '@/components/ui/label';
 
 interface Message {
   id: string;
@@ -47,13 +56,16 @@ export const AuthenticatedChat: React.FC = () => {
   const [currentRoom, setCurrentRoom] = useState('general');
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [rooms] = useState<Room[]>([
-    { id: 'general', name: 'general', type: 'public' },
-    { id: 'random', name: 'random', type: 'public' },
-    { id: 'tech', name: 'tech', type: 'public' },
-  ]);
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<UserPresence[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  
+  // Private room modals
+  const [createRoomOpen, setCreateRoomOpen] = useState(false);
+  const [joinRoomOpen, setJoinRoomOpen] = useState(false);
+  const [newRoomName, setNewRoomName] = useState('');
+  const [newRoomCode, setNewRoomCode] = useState('');
+  const [joinCode, setJoinCode] = useState('');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
@@ -87,10 +99,11 @@ export const AuthenticatedChat: React.FC = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
-  // Load user profile
+  // Load user profile and rooms
   useEffect(() => {
     if (user) {
       loadProfile();
+      loadRooms();
       joinRoom(currentRoom);
     }
   }, [user]);
@@ -109,6 +122,45 @@ export const AuthenticatedChat: React.FC = () => {
     } else {
       setProfile(data);
     }
+  };
+
+  const loadRooms = async () => {
+    if (!user) return;
+
+    // Load public rooms and private rooms the user is a member of
+    const { data: publicRooms, error: publicError } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('type', 'public');
+
+    const { data: memberRooms, error: memberError } = await supabase
+      .from('room_members')
+      .select('room_id')
+      .eq('user_id', user.id);
+
+    if (publicError || memberError) {
+      console.error('Error loading rooms:', publicError || memberError);
+      return;
+    }
+
+    const privateRoomIds = memberRooms?.map(m => m.room_id) || [];
+    
+    const { data: privateRooms } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('type', 'private')
+      .in('id', privateRoomIds.length > 0 ? privateRoomIds : ['none']);
+
+    const allRooms = [
+      ...(publicRooms || []),
+      ...(privateRooms || [])
+    ];
+
+    setRooms(allRooms.map(r => ({
+      id: r.id,
+      name: r.name,
+      type: r.type as 'public' | 'private'
+    })));
   };
 
   const joinRoom = async (roomId: string) => {
@@ -331,6 +383,84 @@ export const AuthenticatedChat: React.FC = () => {
     setCurrentRoom(roomId);
   };
 
+  const handleCreateRoom = async () => {
+    if (!newRoomName.trim() || !newRoomCode.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter both room name and code",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const { data, error } = await supabase.rpc('create_private_room', {
+      p_room_name: newRoomName,
+      p_room_code: newRoomCode
+    });
+
+    const result = data as { success: boolean; error?: string; room_id?: string; room_code?: string } | null;
+
+    if (error || !result?.success) {
+      toast({
+        title: "Error creating room",
+        description: result?.error || error?.message || "Failed to create room",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    toast({
+      title: "Room created!",
+      description: `Share the code "${newRoomCode}" with others to join`,
+    });
+
+    setCreateRoomOpen(false);
+    setNewRoomName('');
+    setNewRoomCode('');
+    await loadRooms();
+    if (result.room_id) {
+      switchRoom(result.room_id);
+    }
+  };
+
+  const handleJoinRoom = async () => {
+    if (!joinCode.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a room code",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const { data, error } = await supabase.rpc('join_private_room', {
+      p_room_code: joinCode
+    });
+
+    const result = data as { success: boolean; error?: string; room_id?: string; message?: string } | null;
+
+    if (error || !result?.success) {
+      toast({
+        title: "Error joining room",
+        description: result?.error || error?.message || "Failed to join room",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    toast({
+      title: "Joined room successfully!",
+      description: result.message || "You can now chat in this room",
+    });
+
+    setJoinRoomOpen(false);
+    setJoinCode('');
+    await loadRooms();
+    if (result.room_id) {
+      switchRoom(result.room_id);
+    }
+  };
+
   const handleSignOut = async () => {
     await clearPresence();
     await supabase.auth.signOut();
@@ -364,25 +494,130 @@ export const AuthenticatedChat: React.FC = () => {
         
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
-            {rooms.map((room) => (
-              <button
-                key={room.id}
-                onClick={() => switchRoom(room.id)}
-                className={cn(
-                  "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors",
-                  currentRoom === room.id
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "hover:bg-sidebar-accent/50 text-sidebar-foreground"
-                )}
-              >
-                {room.type === 'public' ? (
-                  <Hash className="w-4 h-4 opacity-60" />
-                ) : (
-                  <Lock className="w-4 h-4 opacity-60" />
-                )}
-                <span className="font-medium">{room.name}</span>
-              </button>
-            ))}
+            {/* Public Rooms */}
+            {rooms.filter(r => r.type === 'public').length > 0 && (
+              <>
+                <div className="text-xs font-medium text-sidebar-foreground/60 px-3 py-1">
+                  Public Rooms
+                </div>
+                {rooms.filter(r => r.type === 'public').map((room) => (
+                  <button
+                    key={room.id}
+                    onClick={() => switchRoom(room.id)}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors",
+                      currentRoom === room.id
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "hover:bg-sidebar-accent/50 text-sidebar-foreground"
+                    )}
+                  >
+                    <Hash className="w-4 h-4 opacity-60" />
+                    <span className="font-medium">{room.name}</span>
+                  </button>
+                ))}
+              </>
+            )}
+            
+            {/* Private Rooms */}
+            {rooms.filter(r => r.type === 'private').length > 0 && (
+              <>
+                <div className="text-xs font-medium text-sidebar-foreground/60 px-3 py-1 mt-3">
+                  Private Rooms
+                </div>
+                {rooms.filter(r => r.type === 'private').map((room) => (
+                  <button
+                    key={room.id}
+                    onClick={() => switchRoom(room.id)}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors",
+                      currentRoom === room.id
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "hover:bg-sidebar-accent/50 text-sidebar-foreground"
+                    )}
+                  >
+                    <Lock className="w-4 h-4 opacity-60" />
+                    <span className="font-medium">{room.name}</span>
+                  </button>
+                ))}
+              </>
+            )}
+
+            {/* Room Actions */}
+            <div className="border-t border-sidebar-border mt-3 pt-3 space-y-2">
+              <Dialog open={createRoomOpen} onOpenChange={setCreateRoomOpen}>
+                <DialogTrigger asChild>
+                  <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors hover:bg-sidebar-accent/50 text-sidebar-foreground">
+                    <Plus className="w-4 h-4 opacity-60" />
+                    <span className="font-medium">Create Private Room</span>
+                  </button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create Private Room</DialogTitle>
+                    <DialogDescription>
+                      Create a private room with a unique code. Share this code with others to let them join.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="room-name">Room Name</Label>
+                      <Input
+                        id="room-name"
+                        placeholder="Enter room name"
+                        value={newRoomName}
+                        onChange={(e) => setNewRoomName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="room-code">Room Code</Label>
+                      <Input
+                        id="room-code"
+                        placeholder="Enter unique code"
+                        value={newRoomCode}
+                        onChange={(e) => setNewRoomCode(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Others will use this code to join your room
+                      </p>
+                    </div>
+                    <Button onClick={handleCreateRoom} className="w-full">
+                      Create Room
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={joinRoomOpen} onOpenChange={setJoinRoomOpen}>
+                <DialogTrigger asChild>
+                  <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors hover:bg-sidebar-accent/50 text-sidebar-foreground">
+                    <UserPlus className="w-4 h-4 opacity-60" />
+                    <span className="font-medium">Join Private Room</span>
+                  </button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Join Private Room</DialogTitle>
+                    <DialogDescription>
+                      Enter the room code shared with you to join a private chat room.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="join-code">Room Code</Label>
+                      <Input
+                        id="join-code"
+                        placeholder="Enter room code"
+                        value={joinCode}
+                        onChange={(e) => setJoinCode(e.target.value)}
+                      />
+                    </div>
+                    <Button onClick={handleJoinRoom} className="w-full">
+                      Join Room
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
         </ScrollArea>
         

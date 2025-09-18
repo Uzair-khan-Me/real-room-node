@@ -83,6 +83,33 @@ export type Database = {
         }
         Relationships: []
       }
+      rooms: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          room_code: string | null
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id: string
+          name: string
+          room_code?: string | null
+          type: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          room_code?: string | null
+          type?: string
+        }
+        Relationships: []
+      }
       user_presence: {
         Row: {
           id: string
@@ -119,9 +146,17 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      create_private_room: {
+        Args: { p_room_code: string; p_room_name: string }
+        Returns: Json
+      }
       is_room_member: {
         Args: { p_room_id: string; p_user_id: string }
         Returns: boolean
+      }
+      join_private_room: {
+        Args: { p_room_code: string }
+        Returns: Json
       }
     }
     Enums: {
