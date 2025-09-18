@@ -14,6 +14,62 @@ export type Database = {
   }
   public: {
     Tables: {
+      anonymous_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          room_id: string
+          username: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          room_id: string
+          username: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          room_id?: string
+          username?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "anonymous_messages_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "anonymous_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      anonymous_rooms: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          name: string
+          room_code: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          name: string
+          room_code: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          name?: string
+          room_code?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           content: string
@@ -142,6 +198,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_expired_anonymous_rooms: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       cleanup_old_presence: {
         Args: Record<PropertyKey, never>
         Returns: undefined
@@ -153,6 +213,10 @@ export type Database = {
       is_room_member: {
         Args: { p_room_id: string; p_user_id: string }
         Returns: boolean
+      }
+      join_or_create_anonymous_room: {
+        Args: { p_room_code: string; p_room_name?: string }
+        Returns: Json
       }
       join_private_room: {
         Args: { p_room_code: string }

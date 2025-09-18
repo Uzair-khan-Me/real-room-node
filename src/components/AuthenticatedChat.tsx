@@ -464,7 +464,7 @@ export const AuthenticatedChat: React.FC = () => {
   const handleSignOut = async () => {
     await clearPresence();
     await supabase.auth.signOut();
-    navigate('/auth');
+    navigate('/');
   };
 
   const formatTime = (dateString: string) => {

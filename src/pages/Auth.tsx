@@ -80,7 +80,7 @@ const Auth: React.FC = () => {
 
       if (error) throw error;
 
-      navigate('/');
+      navigate('/chat');
     } catch (error: any) {
       toast({
         title: "Error",
