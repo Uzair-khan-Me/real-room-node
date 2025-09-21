@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Send, Hash, Lock, Users, Circle, LogOut, Plus, UserPlus } from 'lucide-react';
+import { Send, Hash, Lock, Users, Circle, LogOut, Plus, UserPlus, Paperclip, Download, FileText, Image, File } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -27,6 +27,10 @@ interface Message {
   created_at: string;
   room_id: string;
   user_id: string | null;
+  file_url?: string | null;
+  file_name?: string | null;
+  file_type?: string | null;
+  file_size?: number | null;
 }
 
 interface Room {
@@ -66,10 +70,13 @@ export const AuthenticatedChat: React.FC = () => {
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomCode, setNewRoomCode] = useState('');
   const [joinCode, setJoinCode] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const messageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   // Initialize auth state
@@ -337,12 +344,54 @@ export const AuthenticatedChat: React.FC = () => {
   };
 
   const handleSendMessage = async () => {
-    if (message.trim() && user && profile) {
+    if ((message.trim() || selectedFile) && user && profile) {
+      let fileUrl = null;
+      let fileName = null;
+      let fileType = null;
+      let fileSize = null;
+
+      // Upload file if selected
+      if (selectedFile) {
+        setUploading(true);
+        const fileExt = selectedFile.name.split('.').pop();
+        const filePath = `${user.id}/${Date.now()}.${fileExt}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('chat-files')
+          .upload(filePath, selectedFile);
+
+        if (uploadError) {
+          setUploading(false);
+          toast({
+            title: "Error uploading file",
+            description: uploadError.message,
+            variant: "destructive"
+          });
+          return;
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('chat-files')
+          .getPublicUrl(filePath);
+
+        fileUrl = publicUrl;
+        fileName = selectedFile.name;
+        fileType = selectedFile.type;
+        fileSize = selectedFile.size;
+        setSelectedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        setUploading(false);
+      }
+
       const messageData = {
         username: profile.username,
-        content: message,
+        content: message || `Shared a file: ${fileName}`,
         room_id: currentRoom,
-        user_id: user.id
+        user_id: user.id,
+        file_url: fileUrl,
+        file_name: fileName,
+        file_type: fileType,
+        file_size: fileSize
       };
       
       setMessage('');
@@ -728,6 +777,43 @@ export const AuthenticatedChat: React.FC = () => {
                       )}>
                         {msg.content}
                       </div>
+                      {msg.file_url && (
+                        <div className="mt-2">
+                          {msg.file_type?.startsWith('image/') ? (
+                            <div className="relative inline-block">
+                              <img 
+                                src={msg.file_url} 
+                                alt={msg.file_name || 'Shared image'} 
+                                className="max-w-sm rounded-lg border border-border"
+                              />
+                              <a
+                                href={msg.file_url}
+                                download={msg.file_name}
+                                className="absolute top-2 right-2 p-2 bg-background/80 hover:bg-background rounded-lg border border-border"
+                              >
+                                <Download className="w-4 h-4" />
+                              </a>
+                            </div>
+                          ) : (
+                            <a
+                              href={msg.file_url}
+                              download={msg.file_name}
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors"
+                            >
+                              {msg.file_type?.includes('pdf') ? (
+                                <FileText className="w-4 h-4" />
+                              ) : (
+                                <File className="w-4 h-4" />
+                              )}
+                              <span className="text-sm">{msg.file_name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                ({(msg.file_size ? msg.file_size / 1024 : 0).toFixed(1)} KB)
+                              </span>
+                              <Download className="w-4 h-4 ml-auto" />
+                            </a>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
@@ -752,26 +838,90 @@ export const AuthenticatedChat: React.FC = () => {
 
         {/* Input */}
         <div className="border-t border-border bg-card p-4">
-          <div className="max-w-4xl mx-auto flex gap-2">
-            <Input
-              ref={messageInputRef}
-              type="text"
-              placeholder={`Message #${currentRoom}`}
-              value={message}
-              onChange={(e) => {
-                setMessage(e.target.value);
-                handleTyping();
-              }}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              className="flex-1 bg-background border-input"
-            />
-            <Button
-              onClick={handleSendMessage}
-              disabled={!message.trim()}
-              className="bg-primary hover:bg-primary-glow transition-colors"
-            >
-              <Send className="w-4 h-4" />
-            </Button>
+          <div className="max-w-4xl mx-auto">
+            {selectedFile && (
+              <div className="mb-2 p-2 bg-secondary/50 rounded-lg flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {selectedFile.type.startsWith('image/') ? (
+                    <Image className="w-4 h-4" />
+                  ) : selectedFile.type.includes('pdf') ? (
+                    <FileText className="w-4 h-4" />
+                  ) : (
+                    <File className="w-4 h-4" />
+                  )}
+                  <span className="text-sm">{selectedFile.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    ({(selectedFile.size / 1024).toFixed(1)} KB)
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedFile(null);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }}
+                >
+                  ✕
+                </Button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    const file = e.target.files[0];
+                    // 10MB limit
+                    if (file.size > 10 * 1024 * 1024) {
+                      toast({
+                        title: "File too large",
+                        description: "Please select a file smaller than 10MB",
+                        variant: "destructive"
+                      });
+                      return;
+                    }
+                    setSelectedFile(file);
+                  }
+                }}
+                className="hidden"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="flex-shrink-0"
+              >
+                <Paperclip className="w-4 h-4" />
+              </Button>
+              <Input
+                ref={messageInputRef}
+                type="text"
+                placeholder={`Message #${currentRoom}`}
+                value={message}
+                onChange={(e) => {
+                  setMessage(e.target.value);
+                  handleTyping();
+                }}
+                onKeyPress={(e) => e.key === 'Enter' && !uploading && handleSendMessage()}
+                className="flex-1 bg-background border-input"
+                disabled={uploading}
+              />
+              <Button
+                onClick={handleSendMessage}
+                disabled={(!message.trim() && !selectedFile) || uploading}
+                className="bg-primary hover:bg-primary-glow transition-colors"
+              >
+                {uploading ? (
+                  <div className="w-4 h-4 border-2 border-current border-r-transparent rounded-full animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </div>

@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Send, Users, Circle, ArrowLeft, Copy, Check } from 'lucide-react';
+import { Send, Users, Circle, ArrowLeft, Copy, Check, Paperclip, Download, FileText, Image, File } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -16,6 +16,10 @@ interface Message {
   content: string;
   created_at: string;
   room_id: string;
+  file_url?: string | null;
+  file_name?: string | null;
+  file_type?: string | null;
+  file_size?: number | null;
 }
 
 interface AnonymousChatProps {
@@ -30,9 +34,12 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
   const [roomInfo, setRoomInfo] = useState<{ id: string; name: string } | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   // Join or create room on mount
@@ -149,12 +156,55 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
   }, [messages]);
 
   const handleSendMessage = async () => {
-    if (!message.trim() || !roomInfo) return;
+    if ((!message.trim() && !selectedFile) || !roomInfo) return;
+    
+    let fileUrl = null;
+    let fileName = null;
+    let fileType = null;
+    let fileSize = null;
+
+    // Upload file if selected
+    if (selectedFile) {
+      setUploading(true);
+      const fileExt = selectedFile.name.split('.').pop();
+      const sessionId = `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const filePath = `${sessionId}/${Date.now()}.${fileExt}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('chat-files')
+        .upload(filePath, selectedFile);
+
+      if (uploadError) {
+        setUploading(false);
+        toast({
+          title: "Error uploading file",
+          description: uploadError.message,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('chat-files')
+        .getPublicUrl(filePath);
+
+      fileUrl = publicUrl;
+      fileName = selectedFile.name;
+      fileType = selectedFile.type;
+      fileSize = selectedFile.size;
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      setUploading(false);
+    }
     
     const messageData = {
       username: username,
-      content: message,
-      room_id: roomInfo.id
+      content: message || `Shared a file: ${fileName}`,
+      room_id: roomInfo.id,
+      file_url: fileUrl,
+      file_name: fileName,
+      file_type: fileType,
+      file_size: fileSize
     };
     
     setMessage('');
@@ -297,6 +347,43 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
                       )}>
                         {msg.content}
                       </div>
+                      {msg.file_url && (
+                        <div className="mt-2">
+                          {msg.file_type?.startsWith('image/') ? (
+                            <div className="relative inline-block">
+                              <img 
+                                src={msg.file_url} 
+                                alt={msg.file_name || 'Shared image'} 
+                                className="max-w-sm rounded-lg border border-border"
+                              />
+                              <a
+                                href={msg.file_url}
+                                download={msg.file_name}
+                                className="absolute top-2 right-2 p-2 bg-background/80 hover:bg-background rounded-lg border border-border"
+                              >
+                                <Download className="w-4 h-4" />
+                              </a>
+                            </div>
+                          ) : (
+                            <a
+                              href={msg.file_url}
+                              download={msg.file_name}
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors"
+                            >
+                              {msg.file_type?.includes('pdf') ? (
+                                <FileText className="w-4 h-4" />
+                              ) : (
+                                <File className="w-4 h-4" />
+                              )}
+                              <span className="text-sm">{msg.file_name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                ({(msg.file_size ? msg.file_size / 1024 : 0).toFixed(1)} KB)
+                              </span>
+                              <Download className="w-4 h-4 ml-auto" />
+                            </a>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
@@ -309,21 +396,81 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
         {/* Message Input */}
         <div className="border-t border-border bg-card p-4">
           <div className="max-w-4xl mx-auto">
+            {selectedFile && (
+              <div className="mb-2 p-2 bg-secondary/50 rounded-lg flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {selectedFile.type.startsWith('image/') ? (
+                    <Image className="w-4 h-4" />
+                  ) : selectedFile.type.includes('pdf') ? (
+                    <FileText className="w-4 h-4" />
+                  ) : (
+                    <File className="w-4 h-4" />
+                  )}
+                  <span className="text-sm">{selectedFile.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    ({(selectedFile.size / 1024).toFixed(1)} KB)
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedFile(null);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }}
+                >
+                  ✕
+                </Button>
+              </div>
+            )}
             <div className="flex gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    const file = e.target.files[0];
+                    if (file.size > 10 * 1024 * 1024) {
+                      toast({
+                        title: "File too large",
+                        description: "Please select a file smaller than 10MB",
+                        variant: "destructive"
+                      });
+                      return;
+                    }
+                    setSelectedFile(file);
+                  }
+                }}
+                className="hidden"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+              >
+                <Paperclip className="w-4 h-4" />
+              </Button>
               <Input
                 ref={messageInputRef}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                onKeyPress={(e) => e.key === 'Enter' && !uploading && handleSendMessage()}
                 placeholder="Type your message..."
                 className="flex-1"
+                disabled={uploading}
               />
               <Button 
                 onClick={handleSendMessage}
-                disabled={!message.trim()}
+                disabled={(!message.trim() && !selectedFile) || uploading}
                 size="icon"
               >
-                <Send className="h-4 w-4" />
+                {uploading ? (
+                  <div className="w-4 h-4 border-2 border-current border-r-transparent rounded-full animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
               </Button>
             </div>
           </div>
