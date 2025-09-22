@@ -111,7 +111,7 @@ export const AuthenticatedChat: React.FC = () => {
     if (user) {
       loadProfile();
       loadRooms();
-      joinRoom(currentRoom);
+      // Don't call joinRoom here, it's handled in switchRoom
     }
   }, [user]);
 
@@ -172,6 +172,11 @@ export const AuthenticatedChat: React.FC = () => {
 
   const joinRoom = async (roomId: string) => {
     if (!user) return;
+
+    // For general room, no need to explicitly join - it's automatically accessible
+    if (roomId === 'general') {
+      return;
+    }
 
     // Add user to room members
     const { error } = await supabase
@@ -249,11 +254,20 @@ export const AuthenticatedChat: React.FC = () => {
       supabase.removeChannel(messageChannel);
       supabase.removeChannel(presenceChannel);
       clearInterval(presenceInterval);
-      clearPresence();
+      if (user && currentRoom) {
+        clearPresence();
+      }
     };
   }, [user, currentRoom]);
 
   const loadMessages = async () => {
+    if (!user) {
+      console.log('No user, skipping message load');
+      return;
+    }
+
+    console.log('Loading messages for room:', currentRoom);
+
     const { data: messages, error: messagesError } = await supabase
       .from('messages')
       .select('*')
@@ -263,8 +277,15 @@ export const AuthenticatedChat: React.FC = () => {
 
     if (messagesError) {
       console.error('Error loading messages:', messagesError);
+      toast({
+        title: "Error loading messages",
+        description: messagesError.message,
+        variant: "destructive"
+      });
       return;
     }
+
+    console.log('Loaded messages:', messages?.length || 0);
 
     // Get profiles for user_ids
     const userIds = [...new Set(messages?.filter(m => m.user_id).map(m => m.user_id))];
@@ -428,8 +449,11 @@ export const AuthenticatedChat: React.FC = () => {
 
   const switchRoom = async (roomId: string) => {
     await clearPresence();
-    await joinRoom(roomId);
     setCurrentRoom(roomId);
+    // joinRoom is handled automatically for general room
+    if (roomId !== 'general') {
+      await joinRoom(roomId);
+    }
   };
 
   const handleCreateRoom = async () => {
