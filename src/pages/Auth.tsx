@@ -215,10 +215,6 @@ const Auth: React.FC = () => {
             </TabsContent>
           </Tabs>
 
-          <div className="text-center text-sm text-muted-foreground">
-            <p>For testing, you can disable email confirmation in</p>
-            <p>Supabase Dashboard → Authentication → Settings</p>
-          </div>
         </div>
       </Card>
     </div>
