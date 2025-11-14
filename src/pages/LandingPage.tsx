@@ -158,20 +158,6 @@ const LandingPage: React.FC = () => {
           </Card>
         </div>
 
-        <div className="text-center mt-12">
-          <p className="text-sm text-muted-foreground">
-            For testing: You can disable email confirmation in the{' '}
-            <a 
-              href="https://supabase.com/dashboard/project/yafocvasvswdehcukqaa/auth/providers"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline"
-            >
-              Supabase Dashboard
-            </a>
-            {' '}to speed up the signup process.
-          </p>
-        </div>
       </div>
     </div>
   );
