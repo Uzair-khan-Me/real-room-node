@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, Globe, Lock, Users, ArrowRight } from 'lucide-react';
+import { MessageCircle, Globe, Lock, Users, ArrowRight, Mic, Phone, Zap, Smartphone } from 'lucide-react';
 import { AnonymousChat } from '@/components/AnonymousChat';
 import { useToast } from '@/hooks/use-toast';
 
@@ -63,11 +63,11 @@ const LandingPage: React.FC = () => {
               <MessageCircle className="h-16 w-16 text-primary" />
             </div>
           </div>
-          <h1 className="text-5xl font-bold mb-4 bg-gradient-primary bg-clip-text text-transparent">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold mb-4 bg-gradient-primary bg-clip-text text-transparent leading-tight">
             Emon Chat
           </h1>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Connect with the world or create private rooms with friends. Choose your chat experience.
+          <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto">
+            Real-time messaging, free peer-to-peer voice calls, and voice notes. Works seamlessly on every device.
           </p>
         </div>
 
@@ -83,18 +83,26 @@ const LandingPage: React.FC = () => {
             <p className="text-muted-foreground mb-6 text-center">
               Create an account to chat with people from around the world in public and private rooms.
             </p>
-            <ul className="space-y-2 mb-6">
-              <li className="flex items-center gap-2 text-sm">
-                <Users className="h-4 w-4 text-primary" />
+            <ul className="space-y-3 mb-6">
+              <li className="flex items-center gap-3 text-sm">
+                <Users className="h-4 w-4 text-blue-500" />
                 <span>Public chat rooms</span>
               </li>
-              <li className="flex items-center gap-2 text-sm">
-                <Lock className="h-4 w-4 text-primary" />
+              <li className="flex items-center gap-3 text-sm">
+                <Lock className="h-4 w-4 text-blue-500" />
                 <span>Create private rooms with codes</span>
               </li>
-              <li className="flex items-center gap-2 text-sm">
-                <MessageCircle className="h-4 w-4 text-primary" />
-                <span>Persistent chat history</span>
+              <li className="flex items-center gap-3 text-sm">
+                <Phone className="h-4 w-4 text-green-500" />
+                <span>Free peer-to-peer voice calls</span>
+              </li>
+              <li className="flex items-center gap-3 text-sm">
+                <Mic className="h-4 w-4 text-violet-500" />
+                <span>Voice message recordings</span>
+              </li>
+              <li className="flex items-center gap-3 text-sm">
+                <MessageCircle className="h-4 w-4 text-blue-500" />
+                <span>Persistent chat history & file sharing</span>
               </li>
             </ul>
             <Button 
@@ -115,9 +123,14 @@ const LandingPage: React.FC = () => {
               </div>
             </div>
             <h2 className="text-2xl font-semibold mb-4 text-center">Quick Private Room</h2>
-            <p className="text-muted-foreground mb-6 text-center">
+            <p className="text-muted-foreground mb-4 text-center">
               No account needed. Just enter a room code to chat privately with friends.
             </p>
+            <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
+              <li className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-green-500" /> Free voice calls in room</li>
+              <li className="flex items-center gap-2"><Mic className="h-3.5 w-3.5 text-violet-500" /> Voice message notes</li>
+              <li className="flex items-center gap-2"><Zap className="h-3.5 w-3.5 text-amber-500" /> Optimized for mobile</li>
+            </ul>
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="room-code">Room Code</Label>
@@ -156,6 +169,25 @@ const LandingPage: React.FC = () => {
               Rooms expire after 24 hours
             </p>
           </Card>
+        </div>
+
+        {/* Responsive Feature Banner */}
+        <div className="mt-12 grid sm:grid-cols-3 gap-4 max-w-4xl mx-auto">
+          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+            <Smartphone className="h-8 w-8 text-blue-500 mb-3" />
+            <h3 className="font-semibold mb-1">Reactive Design</h3>
+            <p className="text-xs text-muted-foreground">Fully responsive for phones, tablets, and desktops.</p>
+          </div>
+          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+            <Zap className="h-8 w-8 text-amber-500 mb-3" />
+            <h3 className="font-semibold mb-1">Optimized</h3>
+            <p className="text-xs text-muted-foreground">Lazy loading, memoized components, and smooth animations.</p>
+          </div>
+          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+            <Mic className="h-8 w-8 text-violet-500 mb-3" />
+            <h3 className="font-semibold mb-1">Voice Chat</h3>
+            <p className="text-xs text-muted-foreground">Free audio messages and peer-to-peer voice calls.</p>
+          </div>
         </div>
 
       </div>

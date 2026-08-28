@@ -207,3 +207,23 @@
     animation: fadeIn 0.2s ease-out;
   }
 }
+
+/* Responsive / Mobile optimizations */
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* Better input focus for mobile */
+  input, textarea, select {
+    @apply text-base;
+  }
+  /* Prevent zoom on iOS for inputs */
+  input[type="text"], input[type="email"], input[type="password"], input[type="number"] {
+    font-size: 16px;
+  }
+}

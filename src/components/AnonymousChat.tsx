@@ -4,6 +4,9 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { VoiceRecorder } from '@/components/VoiceRecorder';
+import { VoiceCall } from '@/components/VoiceCall';
+import { VoiceMessagePlayer } from '@/components/VoiceMessagePlayer';
 import { Send, Users, Circle, ArrowLeft, Copy, Check, Paperclip, Download, FileText, Image, File } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -20,6 +23,7 @@ interface Message {
   file_name?: string | null;
   file_type?: string | null;
   file_size?: number | null;
+  audio_duration?: number | null;
 }
 
 interface AnonymousChatProps {
@@ -36,10 +40,14 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
   const [copied, setCopied] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [isVoiceCallOpen, setIsVoiceCallOpen] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const anonymousUserIdRef = useRef(`anon_${username}_${roomCode}_${Math.random().toString(36).substring(2, 9)}`);
   const { toast } = useToast();
 
   // Join or create room on mount
@@ -156,12 +164,13 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
   }, [messages]);
 
   const handleSendMessage = async () => {
-    if ((!message.trim() && !selectedFile) || !roomInfo) return;
+    if ((!message.trim() && !selectedFile && !audioBlob) || !roomInfo) return;
     
     let fileUrl = null;
     let fileName = null;
     let fileType = null;
     let fileSize = null;
+    let content = message.trim() ? message : '';
 
     // Upload file if selected
     if (selectedFile) {
@@ -192,19 +201,49 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
       fileName = selectedFile.name;
       fileType = selectedFile.type;
       fileSize = selectedFile.size;
+      content = message.trim() ? message : `Shared a file: ${fileName}`;
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       setUploading(false);
     }
     
+    // Upload audio if recorded
+    if (audioBlob) {
+      setUploading(true);
+      const sessionId = `anon_voice_${Date.now()}`;
+      const filePath = `${sessionId}/audio.webm`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('chat-files')
+        .upload(filePath, audioBlob, { contentType: 'audio/webm' });
+
+      if (uploadError) {
+        setUploading(false);
+        toast({ title: "Error uploading audio", description: uploadError.message, variant: "destructive" });
+        return;
+      }
+
+      const { data: { publicUrl } } = supabase.storage.from('chat-files').getPublicUrl(filePath);
+      fileUrl = publicUrl;
+      fileName = 'Voice message';
+      fileType = 'audio/webm';
+      fileSize = audioBlob.size;
+      content = message.trim() ? message : 'Sent a voice message';
+      setMessage(content);
+      setAudioBlob(null);
+      setAudioDuration(0);
+      setUploading(false);
+    }
+
     const messageData = {
       username: username,
-      content: message || `Shared a file: ${fileName}`,
+      content: content || `Shared a file: ${fileName}`,
       room_id: roomInfo.id,
       file_url: fileUrl,
       file_name: fileName,
       file_type: fileType,
-      file_size: fileSize
+      file_size: fileSize,
+      audio_duration: audioDuration > 0 ? audioDuration : null,
     };
     
     setMessage('');
@@ -284,6 +323,7 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <VoiceCall roomId={roomInfo.id} userId={anonymousUserIdRef.current} username={username} onCallStateChange={(open) => setIsVoiceCallOpen(open)} />
             <div className="flex items-center gap-2 px-3 py-1 bg-secondary rounded-lg">
               <span className="text-sm font-medium">Room Code:</span>
               <span className="text-sm font-mono text-primary">{roomCode}</span>
@@ -347,9 +387,11 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
                       )}>
                         {msg.content}
                       </div>
-                      {msg.file_url && (
-                        <div className="mt-2">
-                          {msg.file_type?.startsWith('image/') ? (
+              {msg.file_url && (
+                <div className="mt-2">
+                  {msg.file_type?.startsWith('audio/') ? (
+                    <VoiceMessagePlayer url={msg.file_url} durationSec={msg.audio_duration ? msg.audio_duration / 1000 : 0} />
+                  ) : msg.file_type?.startsWith('image/') ? (
                             <div className="relative inline-block">
                               <img 
                                 src={msg.file_url} 
@@ -423,7 +465,15 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
                 </Button>
               </div>
             )}
-            <div className="flex gap-3">
+            <div className="flex gap-2 items-center">
+              <VoiceRecorder
+                onAudioReady={(blob, durationMs) => {
+                  setAudioBlob(blob);
+                  setAudioDuration(durationMs);
+                }}
+                disabled={uploading}
+                className="flex-shrink-0"
+              />
               <input
                 ref={fileInputRef}
                 type="file"
@@ -463,7 +513,7 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
               />
               <Button 
                 onClick={handleSendMessage}
-                disabled={(!message.trim() && !selectedFile) || uploading}
+                disabled={(!message.trim() && !selectedFile && !audioBlob) || uploading}
                 size="icon"
               >
                 {uploading ? (

@@ -4,6 +4,9 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { VoiceRecorder } from '@/components/VoiceRecorder';
+import { VoiceCall } from '@/components/VoiceCall';
+import { VoiceMessagePlayer } from '@/components/VoiceMessagePlayer';
 import { Send, Hash, Lock, Users, Circle, LogOut, Plus, UserPlus, Paperclip, Download, FileText, Image, File } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -31,6 +34,7 @@ interface Message {
   file_name?: string | null;
   file_type?: string | null;
   file_size?: number | null;
+  audio_duration?: number | null;
 }
 
 interface Room {
@@ -72,6 +76,8 @@ export const AuthenticatedChat: React.FC = () => {
   const [joinCode, setJoinCode] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioDuration, setAudioDuration] = useState(0);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
@@ -365,11 +371,12 @@ export const AuthenticatedChat: React.FC = () => {
   };
 
   const handleSendMessage = async () => {
-    if ((message.trim() || selectedFile) && user && profile) {
+    if (((message.trim() || selectedFile || audioBlob) && user && profile)) {
       let fileUrl = null;
       let fileName = null;
       let fileType = null;
       let fileSize = null;
+      let content = message.trim() ? message : '';
 
       // Upload file if selected
       if (selectedFile) {
@@ -399,20 +406,46 @@ export const AuthenticatedChat: React.FC = () => {
         fileName = selectedFile.name;
         fileType = selectedFile.type;
         fileSize = selectedFile.size;
+        content = message.trim() ? message : `Shared a file: ${fileName}`;
         setSelectedFile(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
         setUploading(false);
       }
 
+      // Upload audio if recorded
+      if (audioBlob) {
+        setUploading(true);
+        const filePath = `${user.id}/${Date.now()}_voice.webm`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('chat-files')
+          .upload(filePath, audioBlob, { contentType: 'audio/webm' });
+        if (uploadError) {
+          setUploading(false);
+          toast({ title: "Error uploading audio", description: uploadError.message, variant: "destructive" });
+          return;
+        }
+        const { data: { publicUrl } } = supabase.storage.from('chat-files').getPublicUrl(filePath);
+        fileUrl = publicUrl;
+        fileName = 'Voice message';
+        fileType = 'audio/webm';
+        fileSize = audioBlob.size;
+        content = message.trim() ? message : 'Sent a voice message';
+        setMessage(content);
+        setAudioBlob(null);
+        setAudioDuration(0);
+        setUploading(false);
+      }
+
       const messageData = {
         username: profile.username,
-        content: message || `Shared a file: ${fileName}`,
+        content: content || `Shared a file: ${fileName}`,
         room_id: currentRoom,
         user_id: user.id,
         file_url: fileUrl,
         file_name: fileName,
         file_type: fileType,
-        file_size: fileSize
+        file_size: fileSize,
+        audio_duration: audioDuration > 0 ? audioDuration : null,
       };
       
       setMessage('');
@@ -752,10 +785,13 @@ export const AuthenticatedChat: React.FC = () => {
         <div className="h-16 border-b border-border bg-card px-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Hash className="w-5 h-5 text-muted-foreground" />
-            <h1 className="text-xl font-semibold">{currentRoom}</h1>
+            <h1 className="text-xl font-semibold hidden sm:block">{currentRoom}</h1>
           </div>
-          <div className="text-sm text-muted-foreground">
-            Secure Chat Room
+          <div className="flex items-center gap-3">
+            {user && (
+              <VoiceCall roomId={currentRoom} userId={user.id} username={profile?.username || 'User'} />
+            )}
+            <span className="text-sm text-muted-foreground hidden md:inline">Secure Chat Room</span>
           </div>
         </div>
 
@@ -803,7 +839,9 @@ export const AuthenticatedChat: React.FC = () => {
                       </div>
                       {msg.file_url && (
                         <div className="mt-2">
-                          {msg.file_type?.startsWith('image/') ? (
+                          {msg.file_type?.startsWith('audio/') ? (
+                            <VoiceMessagePlayer url={msg.file_url} durationSec={msg.audio_duration ? msg.audio_duration / 1000 : 0} />
+                          ) : msg.file_type?.startsWith('image/') ? (
                             <div className="relative inline-block">
                               <img 
                                 src={msg.file_url} 
@@ -891,6 +929,14 @@ export const AuthenticatedChat: React.FC = () => {
               </div>
             )}
             <div className="flex gap-2">
+              <VoiceRecorder
+                onAudioReady={(blob, durationMs) => {
+                  setAudioBlob(blob);
+                  setAudioDuration(durationMs);
+                }}
+                disabled={uploading}
+                className="flex-shrink-0"
+              />
               <input
                 ref={fileInputRef}
                 type="file"
@@ -936,7 +982,7 @@ export const AuthenticatedChat: React.FC = () => {
               />
               <Button
                 onClick={handleSendMessage}
-                disabled={(!message.trim() && !selectedFile) || uploading}
+                disabled={(!message.trim() && !selectedFile && !audioBlob) || uploading}
                 className="bg-primary hover:bg-primary-glow transition-colors"
               >
                 {uploading ? (
