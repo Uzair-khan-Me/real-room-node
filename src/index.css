@@ -2,228 +2,168 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Modern Chat Application Design System */
+/* Modern Social Chat Design System — Facebook / Instagram inspired */
 
 @layer base {
   :root {
-    /* Background layers */
-    --background: 0 0% 100%;
-    --background-secondary: 240 5% 96%;
+    --background: 240 10% 98%;
+    --background-secondary: 0 0% 100%;
     --foreground: 222 47% 11%;
 
-    /* Card and containers */
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
     
-    /* Popovers and overlays */
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    /* Primary brand colors - Deep purple */
+    /* Brand — deep purple like Instagram */
     --primary: 263 70% 50%;
     --primary-foreground: 0 0% 100%;
     --primary-glow: 263 70% 60%;
     
-    /* Secondary colors - Soft gray */
     --secondary: 240 5% 96%;
     --secondary-foreground: 222 47% 11%;
     
-    /* Muted elements */
     --muted: 240 5% 96%;
     --muted-foreground: 240 4% 46%;
     
-    /* Accent colors - Vibrant blue */
     --accent: 217 91% 60%;
     --accent-foreground: 0 0% 100%;
     
-    /* Status colors */
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
     --success: 142 76% 36%;
     --success-foreground: 0 0% 100%;
     
-    /* Borders and inputs */
-    --border: 240 6% 90%;
-    --input: 240 6% 90%;
+    --border: 228 6% 90%;
+    --input: 228 6% 92%;
     --ring: 263 70% 50%;
     
-    /* Border radius */
-    --radius: 0.75rem;
+    --radius: 1rem;
     
-    /* Chat specific */
-    --message-own: 263 70% 50%;
+    /* Social message bubbles */
+    --message-own: linear-gradient(135deg, hsl(263 70% 50%), hsl(217 91% 60%));
     --message-own-foreground: 0 0% 100%;
-    --message-other: 240 5% 96%;
+    --message-other: 0 0% 97%;
     --message-other-foreground: 222 47% 11%;
     --typing-indicator: 217 91% 60%;
     
     /* Gradients */
     --gradient-primary: linear-gradient(135deg, hsl(263 70% 50%), hsl(217 91% 60%));
-    --gradient-subtle: linear-gradient(180deg, hsl(0 0% 100%), hsl(240 5% 96%));
-    --gradient-glow: radial-gradient(circle at 50% 50%, hsl(263 70% 50% / 0.1), transparent);
+    --gradient-subtle: linear-gradient(180deg, hsl(240 10% 98%), hsl(0 0% 100%));
+    --gradient-glow: radial-gradient(circle at 50% 50%, hsl(263 70% 50% / 0.15), transparent);
     
-    /* Shadows */
-    --shadow-sm: 0 1px 2px 0 hsl(222 47% 11% / 0.05);
-    --shadow-md: 0 4px 6px -1px hsl(222 47% 11% / 0.1);
-    --shadow-lg: 0 10px 15px -3px hsl(222 47% 11% / 0.1);
-    --shadow-glow: 0 0 20px hsl(263 70% 50% / 0.2);
+    /* Social shadows */
+    --shadow-sm: 0 1px 3px 0 hsl(222 47% 11% / 0.08);
+    --shadow-md: 0 4px 12px -2px hsl(222 47% 11% / 0.1);
+    --shadow-lg: 0 10px 25px -5px hsl(222 47% 11% / 0.1);
+    --shadow-glow: 0 0 25px hsl(263 70% 50% / 0.25);
     
-    /* Animations */
     --transition-base: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-smooth: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     
-    /* Sidebar */
-    --sidebar-background: 250 20% 97%;
-    --sidebar-foreground: 240 10% 20%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
     --sidebar-primary: 263 70% 50%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 5% 92%;
-    --sidebar-accent-foreground: 240 10% 20%;
-    --sidebar-border: 240 6% 90%;
+    --sidebar-accent: 240 5% 96%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 228 6% 92%;
     --sidebar-ring: 263 70% 50%;
   }
 
   .dark {
-    /* Dark mode colors */
-    --background: 222 47% 11%;
-    --background-secondary: 222 47% 8%;
-    --foreground: 0 0% 95%;
+    --background: 222 47% 9%;
+    --background-secondary: 222 47% 13%;
+    --foreground: 0 0% 96%;
 
-    --card: 222 47% 14%;
-    --card-foreground: 0 0% 95%;
+    --card: 222 47% 13%;
+    --card-foreground: 0 0% 96%;
     
-    --popover: 222 47% 14%;
-    --popover-foreground: 0 0% 95%;
+    --popover: 222 47% 13%;
+    --popover-foreground: 0 0% 96%;
 
-    --primary: 263 70% 50%;
+    --primary: 263 70% 55%;
     --primary-foreground: 0 0% 100%;
-    --primary-glow: 263 70% 60%;
+    --primary-glow: 263 70% 65%;
     
-    --secondary: 222 47% 20%;
-    --secondary-foreground: 0 0% 95%;
+    --secondary: 222 47% 16%;
+    --secondary-foreground: 0 0% 96%;
     
-    --muted: 222 47% 20%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 222 47% 16%;
+    --muted-foreground: 215 20% 70%;
     
-    --accent: 217 91% 60%;
-    --accent-foreground: 222 47% 11%;
+    --accent: 217 91% 65%;
+    --accent-foreground: 222 47% 9%;
     
     --destructive: 0 63% 31%;
     --destructive-foreground: 0 0% 98%;
     
-    --border: 222 47% 20%;
-    --input: 222 47% 20%;
-    --ring: 263 70% 50%;
+    --border: 222 47% 18%;
+    --input: 222 47% 18%;
+    --ring: 263 70% 55%;
     
-    --message-own: 263 70% 50%;
+    --message-own: linear-gradient(135deg, hsl(263 70% 55%), hsl(217 91% 65%));
     --message-own-foreground: 0 0% 100%;
-    --message-other: 222 47% 18%;
-    --message-other-foreground: 0 0% 95%;
+    --message-other: 222 47% 16%;
+    --message-other-foreground: 0 0% 96%;
     
-    --sidebar-background: 222 47% 9%;
-    --sidebar-foreground: 240 5% 96%;
-    --sidebar-primary: 263 70% 50%;
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 0 0% 96%;
+    --sidebar-primary: 263 70% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 47% 15%;
-    --sidebar-accent-foreground: 240 5% 96%;
-    --sidebar-border: 222 47% 20%;
-    --sidebar-ring: 263 70% 50%;
+    --sidebar-accent: 222 47% 16%;
+    --sidebar-accent-foreground: 0 0% 96%;
+    --sidebar-border: 222 47% 18%;
+    --sidebar-ring: 263 70% 55%;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
-
+  * { @apply border-border; }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+    background-image: var(--gradient-subtle);
+    background-attachment: fixed;
   }
+  html { scroll-behavior: smooth; }
   
-  /* Smooth scrolling */
-  html {
-    scroll-behavior: smooth;
-  }
-  
-  /* Custom scrollbar */
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  
-  ::-webkit-scrollbar-track {
-    @apply bg-background;
-  }
-  
-  ::-webkit-scrollbar-thumb {
-    @apply bg-muted-foreground/20 rounded-full;
-  }
-  
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground/30;
-  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-muted-foreground/20 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/40; }
 }
 
 @layer utilities {
-  /* Message animations */
   @keyframes slideInUp {
-    from {
-      opacity: 0;
-      transform: translateY(10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
   }
-  
-  @keyframes pulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
+  @keyframes pulseSlow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
   }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .animate-slide-in-up { animation: slideInUp 0.35s ease-out both; }
+  .animate-pulse-slow { animation: pulseSlow 2.5s ease-in-out infinite; }
+  .animate-fade-in { animation: fadeIn 0.3s ease-out; }
   
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
+  /* Social message bubbles */
+  .bubble-own {
+    background: var(--message-own);
+    color: var(--message-own-foreground);
+    @apply px-4 py-3 rounded-2xl rounded-br-sm shadow-lg;
   }
-  
-  .animate-slide-in-up {
-    animation: slideInUp 0.3s ease-out;
-  }
-  
-  .animate-pulse-slow {
-    animation: pulse 2s ease-in-out infinite;
-  }
-  
-  .animate-fade-in {
-    animation: fadeIn 0.2s ease-out;
+  .bubble-other {
+    background: var(--message-other);
+    color: var(--message-other-foreground);
+    @apply px-4 py-3 rounded-2xl rounded-bl-sm shadow-md border border-border/50;
   }
 }
 
-/* Responsive / Mobile optimizations */
+/* Mobile optimizations */
 @layer base {
-  html {
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-  }
-  body {
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-  /* Better input focus for mobile */
-  input, textarea, select {
-    @apply text-base;
-  }
-  /* Prevent zoom on iOS for inputs */
-  input[type="text"], input[type="email"], input[type="password"], input[type="number"] {
-    font-size: 16px;
-  }
+  html { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  input[type="text"], input[type="email"], input[type="password"], input[type="number"] { font-size: 16px; }
+  input, textarea, select { @apply text-base; }
 }
