@@ -25,23 +25,26 @@ export class VoiceSignaling {
     onCallStart?: () => void,
     onCallEnd?: () => void
   ) {
-    const chName = `voice-${this.roomId}`;
-    this.channel = this.client.channel(chName, {
-      config: { broadcast: { ack: true } },
-    });
+    try {
+      const chName = `voice-${this.roomId}`;
+      this.channel = this.client.channel(chName, {
+        config: { broadcast: { ack: true } },
+      });
 
-    this.channel
-      .on('broadcast', { event: '*' }, (payload: any) => {
-        if (payload.event !== 'voice-msg') return;
-        const msg: SignalingMessage = payload.payload as any;
-        // Ignore messages from self
-        if (msg.from === this.userId) return;
-        if (msg.room !== this.roomId) return;
-        if (msg.type === 'call-start') onCallStart?.();
-        if (msg.type === 'call-end') onCallEnd?.();
-        onMessage(msg);
-      })
-      .subscribe();
+      this.channel
+        .on('broadcast', { event: '*' }, (payload: any) => {
+          if (payload.event !== 'voice-msg') return;
+          const msg: SignalingMessage = payload.payload as any;
+          if (msg.from === this.userId) return;
+          if (msg.room !== this.roomId) return;
+          if (msg.type === 'call-start') onCallStart?.();
+          if (msg.type === 'call-end') onCallEnd?.();
+          onMessage(msg);
+        })
+        .subscribe();
+    } catch (e) {
+      console.error('Voice signaling subscribe error:', e);
+    }
 
     return () => {
       if (this.channel) {
