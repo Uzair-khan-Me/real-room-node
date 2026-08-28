@@ -73,12 +73,14 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
       } catch (e) { console.error('Load messages error:', e); }
     };
     load();
-    const ch = supabase.channel(`anon_${roomInfo.id}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'anonymous_messages', filter: `room_id=eq.${roomInfo.id}` }, (payload) => {
-      const newMsg = payload.new as Message;
-      setMessages(prev => [...prev, newMsg]); scrollToBottom();
-      if (newMsg.username !== 'System' && !onlineUsers.includes(newMsg.username)) setOnlineUsers(prev => [...prev, newMsg.username]);
-    }).subscribe();
-    return () => { supabase.removeChannel(ch); };
+    try {
+      const ch = supabase.channel(`anon_${roomInfo.id}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'anonymous_messages', filter: `room_id=eq.${roomInfo.id}` }, (payload) => {
+        const newMsg = payload.new as Message;
+        setMessages(prev => [...prev, newMsg]); scrollToBottom();
+        if (newMsg.username !== 'System' && !onlineUsers.includes(newMsg.username)) setOnlineUsers(prev => [...prev, newMsg.username]);
+      }).subscribe();
+      return () => { supabase.removeChannel(ch); };
+    } catch (e) { console.error('Subscription error:', e); }
   }, [roomInfo]);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

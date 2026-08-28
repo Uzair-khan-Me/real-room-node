@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import React, { Suspense } from 'react';
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const LandingPage = React.lazy(() => import("./pages/LandingPage"));
 const Index = React.lazy(() => import("./pages/Index"));
@@ -19,12 +20,14 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-gradient-subtle"><div className="text-muted-foreground">Loading...</div></div>}>
+          <ErrorBoundary>
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/chat" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </ErrorBoundary>
         </Suspense>
       </BrowserRouter>
     </TooltipProvider>
