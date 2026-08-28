@@ -90,7 +90,12 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
     if ((!message.trim() && !selectedFile && !audioBlob) || !roomInfo) return;
     try {
       setUploading(true);
-      let fileUrl = null; let fileName = null; let fileType = null; let fileSize = null; let content = message.trim() ? message : '';
+      let fileUrl: string | null = null;
+      let fileName: string | null = null;
+      let fileType: string | null = null;
+      let fileSize: number | null = null;
+      let content = message.trim() ? message : '';
+
       if (selectedFile) {
         const fileExt = selectedFile.name.split('.').pop();
         const filePath = `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}/${Date.now()}.${fileExt}`;
@@ -100,8 +105,8 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
         fileUrl = publicUrl; fileName = selectedFile.name; fileType = selectedFile.type; fileSize = selectedFile.size;
         content = message.trim() ? message : `Shared a file: ${fileName}`;
         setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = '';
-        setUploading(false);
       }
+
       if (audioBlob) {
         const filePath = `anon_voice_${Date.now()}/audio.webm`;
         const { error: uploadErr } = await supabase.storage.from('chat-files').upload(filePath, audioBlob, { contentType: 'audio/webm' });
@@ -109,22 +114,21 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
         const { data: { publicUrl } } = supabase.storage.from('chat-files').getPublicUrl(filePath);
         fileUrl = publicUrl; fileName = 'Voice message'; fileType = 'audio/webm'; fileSize = audioBlob.size;
         content = message.trim() ? message : 'Sent a voice message';
-        setMessage(content); setAudioBlob(null); setAudioDuration(0); setUploading(false);
+        setMessage(content); setAudioBlob(null); setAudioDuration(0);
       }
-      if (!audioBlob && !selectedFile && content) {
-        const { error } = await supabase.from('anonymous_messages').insert({ username, content, room_id: roomInfo.id });
-        if (error) { toast({ title: "Send failed", description: error.message, variant: "destructive" }); return; }
-        setMessage(''); messageInputRef.current?.focus();
-      }
+
+      // Insert exactly once
+      const insertData: any = { username, content: content || `Shared a file: ${fileName}`, room_id: roomInfo.id };
       if (fileUrl) {
-        const { error } = await supabase.from('anonymous_messages').insert({
-          username, content: content || `Shared a file: ${fileName}`, room_id: roomInfo.id,
-          file_url: fileUrl, file_name: fileName, file_type: fileType, file_size: fileSize,
-          
-        });
-        if (error) { toast({ title: "Send failed", description: error.message, variant: "destructive" }); return; }
-        setMessage('');
+        insertData.file_url = fileUrl;
+        insertData.file_name = fileName;
+        insertData.file_type = fileType;
+        insertData.file_size = fileSize;
       }
+
+      const { error } = await supabase.from('anonymous_messages').insert(insertData);
+      if (error) { toast({ title: "Send failed", description: error.message, variant: "destructive" }); return; }
+      setMessage(''); messageInputRef.current?.focus();
     } catch (e: any) {
       toast({ title: "Send error", description: e.message || "Failed to fetch", variant: "destructive" });
       setUploading(false);

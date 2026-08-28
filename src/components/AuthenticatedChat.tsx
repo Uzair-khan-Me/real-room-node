@@ -117,16 +117,25 @@ export const AuthenticatedChat: React.FC = () => {
   // Realtime subscriptions
   useEffect(() => {
     if (!user || !currentRoom) return;
-    const msgCh = supabase.channel('social-msgs')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${currentRoom}` },
-        (payload) => { const newMsg = payload.new as Message; setMessages(prev => [...prev, newMsg]); scrollToBottom(); })
-      .subscribe();
-    const presenceCh = supabase.channel('social-presence')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_presence', filter: `room_id=eq.${currentRoom}` }, () => loadPresence())
-      .subscribe();
-    const interval = setInterval(() => updatePresence(false), 30000);
+    let msgCh: any = null;
+    let presenceCh: any = null;
+    let interval: any = null;
+    try {
+      msgCh = supabase.channel('social-msgs')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${currentRoom}` },
+          (payload) => { const newMsg = payload.new as Message; setMessages(prev => [...prev, newMsg]); scrollToBottom(); })
+        .subscribe();
+      presenceCh = supabase.channel('social-presence')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'user_presence', filter: `room_id=eq.${currentRoom}` }, () => loadPresence())
+        .subscribe();
+      interval = setInterval(() => updatePresence(false), 30000);
+    } catch (e) {
+      console.error('Realtime subscription error:', e);
+    }
     return () => {
-      supabase.removeChannel(msgCh); supabase.removeChannel(presenceCh); clearInterval(interval);
+      try { if (msgCh) supabase.removeChannel(msgCh); } catch (e) {}
+      try { if (presenceCh) supabase.removeChannel(presenceCh); } catch (e) {}
+      if (interval) clearInterval(interval);
       if (user && currentRoom) clearPresence();
     };
   }, [user, currentRoom]);

@@ -94,7 +94,7 @@ export const VoiceCall: React.FC<VoiceCallProps> = ({ roomId, userId, username, 
     );
 
     return () => {
-      cleanup.then((fn) => fn?.());
+      if (typeof cleanup === 'function') cleanup();
       sig.disconnect();
       signalingRef.current = null;
       hangUpInternal();
