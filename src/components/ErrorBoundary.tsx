@@ -9,16 +9,6 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, info: any) { console.error('Component crash:', error, info); }
   render() {
     if (this.state.hasError) {
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-      return this.props.fallback || (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-subtle p-8">
-          <div className="max-w-md text-center space-y-4 bg-card/90 backdrop-blur-xl p-10 rounded-3xl shadow-2xl border border-border/50">
-            <h2 className="text-2xl font-extrabold text-foreground">Something went wrong</h2>
-            <p className="text-muted-foreground">The chat encountered an error. Please refresh and try again.</p>
-=======
->>>>>>> 3d942c2 (fix: full fix set - VoiceCall cleanup, realtime try/catch, anonymous single insert, ErrorBoundary, vercel routing)
       const msg = this.state.error?.message || String(this.state.error);
       const stack = this.state.error?.stack || '';
       return this.props.fallback || (
@@ -30,10 +20,6 @@ export class ErrorBoundary extends Component<Props, State> {
               {msg}
               {stack ? '\n' + stack : ''}
             </pre>
-<<<<<<< HEAD
-=======
->>>>>>> arena/01a04805-real-room-node
->>>>>>> 3d942c2 (fix: full fix set - VoiceCall cleanup, realtime try/catch, anonymous single insert, ErrorBoundary, vercel routing)
             <button onClick={() => window.location.reload()} className="px-6 py-2.5 rounded-xl bg-gradient-primary text-white font-semibold shadow-lg hover:brightness-110 transition-all">Refresh Page</button>
           </div>
         </div>
