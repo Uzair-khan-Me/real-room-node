@@ -1,60 +1,35 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { VoiceCall } from '@/components/VoiceCall';
 import { VoiceMessagePlayer } from '@/components/VoiceMessagePlayer';
-import { Send, Hash, Lock, Users, Circle, LogOut, Plus, UserPlus, Paperclip, Download, FileText, Image, File } from 'lucide-react';
+import { Send, Hash, Lock, Users, Circle, LogOut, Plus, UserPlus, Paperclip, Download, FileText, Image, File, Heart, Smile, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { User, Session } from '@supabase/supabase-js';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
 
 interface Message {
-  id: string;
-  username: string;
-  content: string;
-  created_at: string;
-  room_id: string;
-  user_id: string | null;
-  file_url?: string | null;
-  file_name?: string | null;
-  file_type?: string | null;
-  file_size?: number | null;
-  audio_duration?: number | null;
+  id: string; username: string; content: string; created_at: string;
+  room_id: string; user_id: string | null;
+  file_url?: string | null; file_name?: string | null;
+  file_type?: string | null; file_size?: number | null;
 }
 
-interface Room {
-  id: string;
-  name: string;
-  type: 'public' | 'private';
-}
+interface Room { id: string; name: string; type: 'public' | 'private'; }
+interface UserPresence { user_id: string; username: string; is_typing: boolean; last_seen: string; room_id: string; }
+interface Profile { id: string; username: string; }
 
-interface UserPresence {
-  user_id: string;
-  username: string;
-  is_typing: boolean;
-  last_seen: string;
-  room_id: string;
-}
-
-interface Profile {
-  id: string;
-  username: string;
-}
+const REACTIONS = ['❤️', '😂', '😍', '👍', '🔥'];
 
 export const AuthenticatedChat: React.FC = () => {
   const navigate = useNavigate();
@@ -64,11 +39,10 @@ export const AuthenticatedChat: React.FC = () => {
   const [currentRoom, setCurrentRoom] = useState('general');
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
+  const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
   const [rooms, setRooms] = useState<Room[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<UserPresence[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  
-  // Private room modals
   const [createRoomOpen, setCreateRoomOpen] = useState(false);
   const [joinRoomOpen, setJoinRoomOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
@@ -78,334 +52,159 @@ export const AuthenticatedChat: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioDuration, setAudioDuration] = useState(0);
-  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const messageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  // Initialize auth state
+  // Auth init
   useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (!session) {
-          navigate('/auth');
-        }
-      }
-    );
-
-    // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (!session) {
-        navigate('/auth');
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setSession(session); setUser(session?.user ?? null);
+      if (!session) navigate('/auth');
     });
-
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session); setUser(session?.user ?? null);
+      if (!session) navigate('/auth');
+    });
     return () => subscription.unsubscribe();
   }, [navigate]);
 
-  // Load user profile and rooms
+  // Profile + rooms
   useEffect(() => {
-    if (user) {
-      loadProfile();
-      loadRooms();
-      // Don't call joinRoom here, it's handled in switchRoom
-    }
+    if (user) { loadProfile(); loadRooms(); }
   }, [user]);
 
   const loadProfile = async () => {
     if (!user) return;
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    if (error) {
-      console.error('Error loading profile:', error);
-    } else {
-      setProfile(data);
-    }
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    if (error) console.error('Profile error:', error); else setProfile(data);
   };
 
   const loadRooms = async () => {
     if (!user) return;
-
-    // Load public rooms and private rooms the user is a member of
-    const { data: publicRooms, error: publicError } = await supabase
-      .from('rooms')
-      .select('*')
-      .eq('type', 'public');
-
-    const { data: memberRooms, error: memberError } = await supabase
-      .from('room_members')
-      .select('room_id')
-      .eq('user_id', user.id);
-
-    if (publicError || memberError) {
-      console.error('Error loading rooms:', publicError || memberError);
-      return;
-    }
-
-    const privateRoomIds = memberRooms?.map(m => m.room_id) || [];
-    
-    const { data: privateRooms } = await supabase
-      .from('rooms')
-      .select('*')
-      .eq('type', 'private')
-      .in('id', privateRoomIds.length > 0 ? privateRoomIds : ['none']);
-
-    const allRooms = [
+    const { data: publicRooms, error: publicError } = await supabase.from('rooms').select('*').eq('type', 'public');
+    const { data: memberRooms, error: memberError } = await supabase.from('room_members').select('room_id').eq('user_id', user.id);
+    if (publicError || memberError) { console.error('Rooms error:', publicError || memberError); return; }
+    const privateIds = (memberRooms || []).map((m: any) => m.room_id);
+    const { data: privateRooms } = await supabase.from('rooms').select('*').eq('type', 'private').in('id', privateIds.length > 0 ? privateIds : ['none']);
+    setRooms([
       ...(publicRooms || []),
       ...(privateRooms || [])
-    ];
-
-    setRooms(allRooms.map(r => ({
-      id: r.id,
-      name: r.name,
-      type: r.type as 'public' | 'private'
-    })));
+    ].map((r: any) => ({ id: r.id, name: r.name, type: r.type as 'public' | 'private' })));
   };
 
   const joinRoom = async (roomId: string) => {
     if (!user) return;
-
-    // For general room, no need to explicitly join - it's automatically accessible
-    if (roomId === 'general') {
-      return;
-    }
-
-    // Add user to room members
-    const { error } = await supabase
-      .from('room_members')
-      .insert([{ room_id: roomId, user_id: user.id }]);
-
-    if (error && !error.message.includes('duplicate')) {
-      console.error('Error joining room:', error);
-    }
+    if (roomId === 'general') return;
+    try {
+      const { error } = await supabase.from('room_members').insert([{ room_id: roomId, user_id: user.id }]);
+      if (error && !error.message.includes('duplicate')) console.error('Join error:', error);
+    } catch (e: any) { console.error('Join exception:', e); }
   };
 
-  // Auto-scroll to bottom
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  useEffect(() => { scrollToBottom(); }, [messages]);
 
-  // Load messages when switching rooms
+  // Load messages + presence
   useEffect(() => {
-    if (user && currentRoom) {
-      loadMessages();
-      updatePresence(false);
-    }
+    if (!user || !currentRoom) return;
+    loadMessages(); updatePresence(false);
   }, [user, currentRoom]);
 
-  // Set up real-time subscriptions
+  // Realtime subscriptions
   useEffect(() => {
-    if (!user) return;
-
-    // Subscribe to new messages
-    const messageChannel = supabase
-      .channel('messages')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `room_id=eq.${currentRoom}`
-        },
-        (payload) => {
-          const newMsg = payload.new as Message;
-          setMessages(prev => [...prev, newMsg]);
-          scrollToBottom();
-        }
-      )
-      .subscribe();
-
-    // Subscribe to presence updates
-    const presenceChannel = supabase
-      .channel('presence')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_presence',
-          filter: `room_id=eq.${currentRoom}`
-        },
-        () => {
-          loadPresence();
-        }
-      )
-      .subscribe();
-
-    // Update presence periodically
-    const presenceInterval = setInterval(() => {
-      updatePresence(false);
-    }, 30000);
-
+    if (!user || !currentRoom) return;
+    let msgCh: any = null;
+    let presenceCh: any = null;
+    let interval: any = null;
+    try {
+      msgCh = supabase.channel('social-msgs')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${currentRoom}` },
+          (payload) => { const newMsg = payload.new as Message; setMessages(prev => [...prev, newMsg]); scrollToBottom(); })
+        .subscribe();
+      presenceCh = supabase.channel('social-presence')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'user_presence', filter: `room_id=eq.${currentRoom}` }, () => loadPresence())
+        .subscribe();
+      interval = setInterval(() => updatePresence(false), 30000);
+    } catch (e) {
+      console.error('Realtime subscription error:', e);
+    }
     return () => {
-      supabase.removeChannel(messageChannel);
-      supabase.removeChannel(presenceChannel);
-      clearInterval(presenceInterval);
-      if (user && currentRoom) {
-        clearPresence();
-      }
+      try { if (msgCh) supabase.removeChannel(msgCh); } catch (e) {}
+      try { if (presenceCh) supabase.removeChannel(presenceCh); } catch (e) {}
+      if (interval) clearInterval(interval);
+      if (user && currentRoom) clearPresence();
     };
   }, [user, currentRoom]);
 
   const loadMessages = async () => {
-    if (!user) {
-      console.log('No user, skipping message load');
-      return;
-    }
-
-    console.log('Loading messages for room:', currentRoom);
-
-    const { data: messages, error: messagesError } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('room_id', currentRoom)
-      .order('created_at', { ascending: true })
-      .limit(100);
-
-    if (messagesError) {
-      console.error('Error loading messages:', messagesError);
-      toast({
-        title: "Error loading messages",
-        description: messagesError.message,
-        variant: "destructive"
-      });
-      return;
-    }
-
-    console.log('Loaded messages:', messages?.length || 0);
-
-    // Get profiles for user_ids
-    const userIds = [...new Set(messages?.filter(m => m.user_id).map(m => m.user_id))];
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, username')
-      .in('id', userIds);
-
-    // Map usernames to messages
-    const profileMap = new Map(profiles?.map(p => [p.id, p.username]) || []);
-    const transformedMessages = messages?.map(msg => ({
-      ...msg,
-      username: msg.user_id ? (profileMap.get(msg.user_id) || msg.username || 'Unknown') : (msg.username || 'System')
-    })) || [];
-    
-    setMessages(transformedMessages);
-    scrollToBottom();
+    if (!user || !currentRoom) return;
+    try {
+      const { data: messages, error } = await supabase.from('messages').select('*').eq('room_id', currentRoom).order('created_at', { ascending: true }).limit(100);
+      if (error) { toast({ title: "Error loading messages", description: error.message, variant: "destructive" }); return; }
+      const userIds = [...new Set((messages || []).filter((m: any) => m.user_id).map((m: any) => m.user_id))];
+      const profileMap = new Map();
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase.from('profiles').select('id, username').in('id', userIds);
+        (profiles || []).forEach((p: any) => profileMap.set(p.id, p.username));
+      }
+      setMessages((messages || []).map((msg: any) => ({
+        ...msg,
+        username: msg.user_id ? (profileMap.get(msg.user_id) || msg.username || 'Unknown') : (msg.username || 'System')
+      })));
+      scrollToBottom();
+    } catch (e: any) { console.error('Load messages error:', e); }
   };
 
   const loadPresence = async () => {
-    const { data: presence, error } = await supabase
-      .from('user_presence')
-      .select('*')
-      .eq('room_id', currentRoom)
-      .gte('last_seen', new Date(Date.now() - 60000).toISOString());
-
-    if (error) {
-      console.error('Error loading presence:', error);
-      return;
-    }
-
-    // Get profiles for user_ids
-    const userIds = [...new Set(presence?.filter(p => p.user_id).map(p => p.user_id))];
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, username')
-      .in('id', userIds);
-
-    // Map usernames to presence
-    const profileMap = new Map(profiles?.map(p => [p.id, p.username]) || []);
-    const transformedPresence = presence?.map(p => ({
-      ...p,
-      username: p.user_id ? (profileMap.get(p.user_id) || p.username || 'Unknown') : (p.username || 'Unknown')
-    })) || [];
-
-    setOnlineUsers(transformedPresence.filter(p => p.user_id !== user?.id));
-    const typing = transformedPresence
-      .filter(p => p.is_typing && p.user_id !== user?.id)
-      .map(p => p.username);
-    setTypingUsers(typing);
+    try {
+      const { data: presence, error } = await supabase.from('user_presence').select('*').eq('room_id', currentRoom).gte('last_seen', new Date(Date.now() - 60000).toISOString());
+      if (error) return;
+      const userIds = [...new Set((presence || []).filter((p: any) => p.user_id).map((p: any) => p.user_id))];
+      const map = new Map();
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase.from('profiles').select('id, username').in('id', userIds);
+        (profiles || []).forEach((p: any) => map.set(p.id, p.username));
+      }
+      const transformed = (presence || []).map((p: any) => ({ ...p, username: p.user_id ? (map.get(p.user_id) || p.username || 'Unknown') : (p.username || 'Unknown') }));
+      setOnlineUsers(transformed.filter((p: any) => p.user_id !== user?.id));
+      setTypingUsers(transformed.filter((p: any) => p.is_typing && p.user_id !== user?.id).map((p: any) => p.username));
+    } catch (e: any) { console.error('Presence error:', e); }
   };
 
   const updatePresence = async (isTyping: boolean) => {
-    if (!user || !profile) return;
-
-    await supabase
-      .from('user_presence')
-      .upsert({
-        room_id: currentRoom,
-        user_id: user.id,
-        username: profile.username,
-        is_typing: isTyping,
-        last_seen: new Date().toISOString()
-      }, {
-        onConflict: 'room_id,username'
-      });
+    if (!user || !profile || !currentRoom) return;
+    try {
+      await supabase.from('user_presence').upsert({
+        room_id: currentRoom, user_id: user.id, username: profile.username, is_typing: isTyping, last_seen: new Date().toISOString()
+      }, { onConflict: 'room_id,username' });
+    } catch (e: any) { console.error('Presence update error:', e); }
   };
-
   const clearPresence = async () => {
-    if (user && currentRoom) {
-      await supabase
-        .from('user_presence')
-        .delete()
-        .eq('room_id', currentRoom)
-        .eq('user_id', user.id);
-    }
+    if (!user || !currentRoom) return;
+    try { await supabase.from('user_presence').delete().eq('room_id', currentRoom).eq('user_id', user.id); } catch (e) {}
   };
 
-  const handleSendMessage = async () => {
-    if (((message.trim() || selectedFile || audioBlob) && user && profile)) {
-      let fileUrl = null;
-      let fileName = null;
-      let fileType = null;
-      let fileSize = null;
+  const handleSendMessage = useCallback(async () => {
+    if ((!message.trim() && !selectedFile && !audioBlob) || !user || !profile || !currentRoom) return;
+    try {
+      setUploading(true);
+      let fileUrl: string | null = null;
+      let fileName: string | null = null;
+      let fileType: string | null = null;
+      let fileSize: number | null = null;
       let content = message.trim() ? message : '';
 
-      // Upload file if selected
       if (selectedFile) {
-        setUploading(true);
         const fileExt = selectedFile.name.split('.').pop();
         const filePath = `${user.id}/${Date.now()}.${fileExt}`;
-
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('chat-files')
-          .upload(filePath, selectedFile);
-
-        if (uploadError) {
-          setUploading(false);
-          toast({
-            title: "Error uploading file",
-            description: uploadError.message,
-            variant: "destructive"
-          });
-          return;
-        }
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('chat-files')
-          .getPublicUrl(filePath);
-
-        fileUrl = publicUrl;
-        fileName = selectedFile.name;
-        fileType = selectedFile.type;
-        fileSize = selectedFile.size;
+        const { data, error: uploadErr } = await supabase.storage.from('chat-files').upload(filePath, selectedFile);
+        if (uploadErr) { toast({ title: "Upload failed", description: uploadErr.message, variant: "destructive" }); setUploading(false); return; }
+        const { data: { publicUrl } } = supabase.storage.from('chat-files').getPublicUrl(filePath);
+        fileUrl = publicUrl; fileName = selectedFile.name; fileType = selectedFile.type; fileSize = selectedFile.size;
         content = message.trim() ? message : `Shared a file: ${fileName}`;
         setSelectedFile(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -414,26 +213,13 @@ export const AuthenticatedChat: React.FC = () => {
 
       // Upload audio if recorded
       if (audioBlob) {
-        setUploading(true);
         const filePath = `${user.id}/${Date.now()}_voice.webm`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('chat-files')
-          .upload(filePath, audioBlob, { contentType: 'audio/webm' });
-        if (uploadError) {
-          setUploading(false);
-          toast({ title: "Error uploading audio", description: uploadError.message, variant: "destructive" });
-          return;
-        }
+        const { error: uploadErr } = await supabase.storage.from('chat-files').upload(filePath, audioBlob, { contentType: 'audio/webm' });
+        if (uploadErr) { toast({ title: "Audio upload failed", description: uploadErr.message, variant: "destructive" }); setUploading(false); return; }
         const { data: { publicUrl } } = supabase.storage.from('chat-files').getPublicUrl(filePath);
-        fileUrl = publicUrl;
-        fileName = 'Voice message';
-        fileType = 'audio/webm';
-        fileSize = audioBlob.size;
+        fileUrl = publicUrl; fileName = 'Voice message'; fileType = 'audio/webm'; fileSize = audioBlob.size;
         content = message.trim() ? message : 'Sent a voice message';
-        setMessage(content);
-        setAudioBlob(null);
-        setAudioDuration(0);
-        setUploading(false);
+        setMessage(content); setAudioBlob(null); setAudioDuration(0);
       }
 
       const messageData = {
@@ -445,281 +231,178 @@ export const AuthenticatedChat: React.FC = () => {
         file_name: fileName,
         file_type: fileType,
         file_size: fileSize,
-        audio_duration: audioDuration > 0 ? audioDuration : null,
+        
       };
-      
-      setMessage('');
-      messageInputRef.current?.focus();
-      
-      const { error } = await supabase
-        .from('messages')
-        .insert(messageData);
 
-      if (error) {
-        toast({
-          title: "Error sending message",
-          description: error.message,
-          variant: "destructive"
-        });
-        setMessage(messageData.content);
-      }
-    }
-  };
+      if (selectedFile) { setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }
+      setMessage(''); messageInputRef.current?.focus();
+      const { error } = await supabase.from('messages').insert(messageData);
+      if (error) { toast({ title: "Send failed", description: error.message, variant: "destructive" }); setMessage(messageData.content); }
+    } catch (e: any) {
+      toast({ title: "Send error", description: e.message || "Failed to send message", variant: "destructive" });
+      setUploading(false);
+    } finally { setUploading(false); }
+  }, [message, selectedFile, audioBlob, user, profile, currentRoom, audioDuration, toast]);
 
-  const handleTyping = () => {
+  const handleTyping = useCallback(() => {
     if (user && message.length > 0) {
       updatePresence(true);
-      
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-      
-      typingTimeoutRef.current = setTimeout(() => {
-        updatePresence(false);
-      }, 2000);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => updatePresence(false), 2000);
     }
-  };
+  }, [message, user]);
 
   const switchRoom = async (roomId: string) => {
     await clearPresence();
     setCurrentRoom(roomId);
-    // joinRoom is handled automatically for general room
-    if (roomId !== 'general') {
-      await joinRoom(roomId);
-    }
+    if (roomId !== 'general') await joinRoom(roomId);
   };
 
   const handleCreateRoom = async () => {
     if (!newRoomName.trim() || !newRoomCode.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter both room name and code",
-        variant: "destructive"
-      });
-      return;
+      toast({ title: "Error", description: "Please enter both room name and code", variant: "destructive" }); return;
     }
-
-    const { data, error } = await supabase.rpc('create_private_room', {
-      p_room_name: newRoomName,
-      p_room_code: newRoomCode
-    });
-
-    const result = data as { success: boolean; error?: string; room_id?: string; room_code?: string } | null;
-
-    if (error || !result?.success) {
-      toast({
-        title: "Error creating room",
-        description: result?.error || error?.message || "Failed to create room",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    toast({
-      title: "Room created!",
-      description: `Share the code "${newRoomCode}" with others to join`,
-    });
-
-    setCreateRoomOpen(false);
-    setNewRoomName('');
-    setNewRoomCode('');
-    await loadRooms();
-    if (result.room_id) {
-      switchRoom(result.room_id);
-    }
+    try {
+      const { data, error } = await supabase.rpc('create_private_room', { p_room_name: newRoomName, p_room_code: newRoomCode });
+      const result = data as { success: boolean; error?: string; room_id?: string; } | null;
+      if (error || !result?.success) {
+        toast({ title: "Error creating room", description: result?.error || error?.message || "Failed to create room", variant: "destructive" }); return;
+      }
+      toast({ title: "Room created!", description: `Share the code "${newRoomCode}" with others to join` });
+      setCreateRoomOpen(false); setNewRoomName(''); setNewRoomCode('');
+      await loadRooms(); if (result.room_id) switchRoom(result.room_id);
+    } catch (e: any) { toast({ title: "Room creation failed", description: e.message || "Unknown error", variant: "destructive" }); }
   };
 
   const handleJoinRoom = async () => {
     if (!joinCode.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter a room code",
-        variant: "destructive"
-      });
-      return;
+      toast({ title: "Error", description: "Please enter a room code", variant: "destructive" }); return;
     }
-
-    const { data, error } = await supabase.rpc('join_private_room', {
-      p_room_code: joinCode
-    });
-
-    const result = data as { success: boolean; error?: string; room_id?: string; message?: string } | null;
-
-    if (error || !result?.success) {
-      toast({
-        title: "Error joining room",
-        description: result?.error || error?.message || "Failed to join room",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    toast({
-      title: "Joined room successfully!",
-      description: result.message || "You can now chat in this room",
-    });
-
-    setJoinRoomOpen(false);
-    setJoinCode('');
-    await loadRooms();
-    if (result.room_id) {
-      switchRoom(result.room_id);
-    }
+    try {
+      const { data, error } = await supabase.rpc('join_private_room', { p_room_code: joinCode });
+      const result = data as { success: boolean; error?: string; room_id?: string; message?: string } | null;
+      if (error || !result?.success) {
+        toast({ title: "Error joining room", description: result?.error || error?.message || "Failed to join room", variant: "destructive" }); return;
+      }
+      toast({ title: "Joined successfully!", description: result.message || "Welcome to the room" });
+      setJoinRoomOpen(false); setJoinCode(''); await loadRooms(); if (result.room_id) switchRoom(result.room_id);
+    } catch (e: any) { toast({ title: "Join failed", description: e.message || "Failed to fetch", variant: "destructive" }); }
   };
 
   const handleSignOut = async () => {
-    await clearPresence();
-    await supabase.auth.signOut();
-    navigate('/');
+    await clearPresence(); await supabase.auth.signOut(); navigate('/');
   };
 
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
+  const formatTime = (dateString: string) => new Date(dateString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  const addReaction = async (msgId: string, reaction: string) => {
+    setMessageReactions(prev => {
+      const existing = prev[msgId] || [];
+      return { ...prev, [msgId]: existing.includes(reaction) ? existing.filter(r => r !== reaction) : [...existing, reaction] };
     });
   };
 
   if (!user || !profile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-subtle">
-        <Card className="p-8">
-          <p className="text-muted-foreground">Loading...</p>
+        <Card className="p-10 shadow-xl bg-card/90 backdrop-blur rounded-3xl border border-border/50">
+          <div className="w-14 h-14 rounded-full bg-gradient-primary mx-auto mb-5 shadow-glow animate-pulse-slow" />
+          <p className="text-xl font-medium text-foreground text-center">Loading your feed...</p>
         </Card>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-background">
-      {/* Sidebar */}
-      <div className="w-64 bg-sidebar-background border-r border-sidebar-border flex flex-col">
-        <div className="p-4 border-b border-sidebar-border">
-          <h2 className="font-semibold text-lg text-sidebar-foreground">Chat Rooms</h2>
+    <div className="flex h-screen bg-gradient-subtle overflow-hidden">
+      {/* Sidebar — modern social style */}
+      <aside className="w-72 hidden md:flex flex-col bg-card/80 backdrop-blur-xl border-r border-border/60 shadow-xl">
+        <div className="p-6 border-b border-border/40">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-full bg-gradient-primary shadow-glow flex items-center justify-center text-white font-bold text-lg shadow-md">{profile.username.slice(0, 1).toUpperCase()}</div>
+            <div>
+              <h2 className="font-bold text-lg leading-tight">{profile.username}</h2>
+              <span className="text-xs text-success font-medium flex items-center gap-1"><Circle className="w-2 h-2 fill-current" /> Active now</span>
+            </div>
+          </div>
         </div>
         
-        <ScrollArea className="flex-1">
-          <div className="p-2 space-y-1">
+        <ScrollArea className="flex-1 px-4 py-4">
+          <div className="space-y-1">
             {/* Public Rooms */}
             {rooms.filter(r => r.type === 'public').length > 0 && (
-              <>
-                <div className="text-xs font-medium text-sidebar-foreground/60 px-3 py-1">
-                  Public Rooms
-                </div>
-                {rooms.filter(r => r.type === 'public').map((room) => (
-                  <button
-                    key={room.id}
-                    onClick={() => switchRoom(room.id)}
-                    className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors",
-                      currentRoom === room.id
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "hover:bg-sidebar-accent/50 text-sidebar-foreground"
-                    )}
+              <div className="mb-4">
+                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 px-2">Public Channels</h3>
+                {rooms.filter(r => r.type === 'public').map(room => (
+                  <button key={room.id} onClick={() => switchRoom(room.id)}
+                    className={cn("w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left transition-all hover:bg-secondary/60 mb-1",
+                      currentRoom === room.id ? "bg-gradient-primary text-white shadow-lg shadow-violet-500/20 scale-[1.02]" : "text-foreground hover:scale-[1.01]")}
                   >
-                    <Hash className="w-4 h-4 opacity-60" />
-                    <span className="font-medium">{room.name}</span>
+                    <div className={cn("w-9 h-9 rounded-full flex items-center justify-center shadow-sm text-sm font-bold", currentRoom === room.id ? "bg-white/20" : "bg-gradient-to-br from-violet-100 to-indigo-100 text-violet-600")}>
+                      {room.name[0]?.toUpperCase() || '#'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{room.name}</p>
+                      <p className="text-xs opacity-70 truncate">{currentRoom === room.id ? 'Active now' : 'Public room'}</p>
+                    </div>
+                    {currentRoom === room.id && <div className="w-2 h-2 rounded-full bg-white animate-pulse" />}
                   </button>
                 ))}
-              </>
+              </div>
             )}
             
             {/* Private Rooms */}
             {rooms.filter(r => r.type === 'private').length > 0 && (
-              <>
-                <div className="text-xs font-medium text-sidebar-foreground/60 px-3 py-1 mt-3">
-                  Private Rooms
-                </div>
-                {rooms.filter(r => r.type === 'private').map((room) => (
-                  <button
-                    key={room.id}
-                    onClick={() => switchRoom(room.id)}
-                    className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors",
-                      currentRoom === room.id
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "hover:bg-sidebar-accent/50 text-sidebar-foreground"
-                    )}
+              <div className="mb-4">
+                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 px-2">Private Rooms</h3>
+                {rooms.filter(r => r.type === 'private').map(room => (
+                  <button key={room.id} onClick={() => switchRoom(room.id)}
+                    className={cn("w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left transition-all hover:bg-secondary/60 mb-1",
+                      currentRoom === room.id ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/20 scale-[1.02]" : "text-foreground hover:scale-[1.01]")}
                   >
-                    <Lock className="w-4 h-4 opacity-60" />
-                    <span className="font-medium">{room.name}</span>
+                    <div className={cn("w-9 h-9 rounded-full flex items-center justify-center shadow-sm text-sm font-bold", currentRoom === room.id ? "bg-white/20" : "bg-gradient-to-br from-amber-100 to-orange-100 text-amber-600")}>
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{room.name}</p>
+                      <p className="text-xs opacity-70 truncate">Private · {currentRoom === room.id ? 'Active' : 'Locked'}</p>
+                    </div>
                   </button>
                 ))}
-              </>
+              </div>
             )}
 
             {/* Room Actions */}
-            <div className="border-t border-sidebar-border mt-3 pt-3 space-y-2">
+            <div className="border-t border-border/40 pt-4 space-y-1">
               <Dialog open={createRoomOpen} onOpenChange={setCreateRoomOpen}>
                 <DialogTrigger asChild>
-                  <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors hover:bg-sidebar-accent/50 text-sidebar-foreground">
-                    <Plus className="w-4 h-4 opacity-60" />
-                    <span className="font-medium">Create Private Room</span>
+                  <button className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left text-sm font-semibold transition-all hover:bg-gradient-primary hover:text-white hover:shadow-md hover:scale-[1.02] text-foreground">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shadow-md"><Plus className="w-4 h-4" /></div>
+                    Create Private Room
                   </button>
                 </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Create Private Room</DialogTitle>
-                    <DialogDescription>
-                      Create a private room with a unique code. Share this code with others to let them join.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 pt-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="room-name">Room Name</Label>
-                      <Input
-                        id="room-name"
-                        placeholder="Enter room name"
-                        value={newRoomName}
-                        onChange={(e) => setNewRoomName(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="room-code">Room Code</Label>
-                      <Input
-                        id="room-code"
-                        placeholder="Enter unique code"
-                        value={newRoomCode}
-                        onChange={(e) => setNewRoomCode(e.target.value)}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Others will use this code to join your room
-                      </p>
-                    </div>
-                    <Button onClick={handleCreateRoom} className="w-full">
-                      Create Room
-                    </Button>
+                <DialogContent className="rounded-3xl border-border/50 shadow-2xl bg-card/95 backdrop-blur-xl">
+                  <DialogHeader><DialogTitle className="text-xl font-bold">Create Room</DialogTitle><DialogDescription>Create a private space for your friends.</DialogDescription></DialogHeader>
+                  <div className="space-y-4 pt-2">
+                    <div><Label htmlFor="room-name">Room Name</Label><Input id="room-name" placeholder="Cool room name" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} className="rounded-xl" /></div>
+                    <div><Label htmlFor="room-code">Room Code</Label><Input id="room-code" placeholder="Unique code" value={newRoomCode} onChange={e => setNewRoomCode(e.target.value)} className="rounded-xl" /></div>
+                    <Button onClick={handleCreateRoom} className="w-full rounded-xl bg-gradient-primary hover:brightness-110 shadow-lg">Create Room</Button>
                   </div>
                 </DialogContent>
               </Dialog>
 
               <Dialog open={joinRoomOpen} onOpenChange={setJoinRoomOpen}>
                 <DialogTrigger asChild>
-                  <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors hover:bg-sidebar-accent/50 text-sidebar-foreground">
-                    <UserPlus className="w-4 h-4 opacity-60" />
-                    <span className="font-medium">Join Private Room</span>
+                  <button className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left text-sm font-semibold transition-all hover:bg-gradient-to-r hover:from-violet-600 hover:to-indigo-600 hover:text-white hover:shadow-md hover:scale-[1.02] text-foreground">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-md"><UserPlus className="w-4 h-4" /></div>
+                    Join Private Room
                   </button>
                 </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Join Private Room</DialogTitle>
-                    <DialogDescription>
-                      Enter the room code shared with you to join a private chat room.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 pt-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="join-code">Room Code</Label>
-                      <Input
-                        id="join-code"
-                        placeholder="Enter room code"
-                        value={joinCode}
-                        onChange={(e) => setJoinCode(e.target.value)}
-                      />
-                    </div>
-                    <Button onClick={handleJoinRoom} className="w-full">
-                      Join Room
-                    </Button>
+                <DialogContent className="rounded-3xl border-border/50 shadow-2xl bg-card/95 backdrop-blur-xl">
+                  <DialogHeader><DialogTitle className="text-xl font-bold">Join Room</DialogTitle><DialogDescription>Enter the code shared with you.</DialogDescription></DialogHeader>
+                  <div className="space-y-4 pt-2">
+                    <div><Label htmlFor="join-code">Room Code</Label><Input id="join-code" placeholder="Enter code" value={joinCode} onChange={e => setJoinCode(e.target.value)} className="rounded-xl" /></div>
+                    <Button onClick={handleJoinRoom} className="w-full rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:brightness-110 shadow-lg">Join Room</Button>
                   </div>
                 </DialogContent>
               </Dialog>
@@ -727,151 +410,118 @@ export const AuthenticatedChat: React.FC = () => {
           </div>
         </ScrollArea>
         
-        {/* Online Users */}
-        <div className="border-t border-sidebar-border p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Users className="w-4 h-4 text-sidebar-foreground/60" />
-            <h3 className="text-sm font-medium text-sidebar-foreground">
-              Online ({onlineUsers.length + 1})
-            </h3>
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Circle className="w-2 h-2 fill-current text-success" />
-              <span className="text-sm text-sidebar-foreground/80 font-medium">
-                {profile.username} (You)
-              </span>
+        {/* Online Users — social style */}
+        <div className="border-t border-border/40 p-5 bg-gradient-to-b from-card/50 to-transparent">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Active Now</h3>
+          <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-violet-500 to-indigo-600 rounded-full text-white text-xs font-bold shadow-md">
+              <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-[10px]">{profile.username.slice(0, 1).toUpperCase()}</div>
+              <span>You</span>
             </div>
-            {onlineUsers.slice(0, 4).map((user, idx) => (
-              <div key={idx} className="flex items-center gap-2">
-                <Circle className="w-2 h-2 fill-current text-success" />
-                <span className="text-sm text-sidebar-foreground/80">{user.username}</span>
+            {onlineUsers.slice(0, 6).map((u, i) => (
+              <div key={i} className="flex items-center gap-2 px-3 py-2 bg-card rounded-full text-xs font-medium shadow-sm border border-border/30 hover:shadow-md transition-all hover:scale-105">
+                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-[8px] text-white font-bold">{u.username.slice(0, 1).toUpperCase()}</div>
+                <span className="truncate max-w-[80px]">{u.username}</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-success" />
               </div>
             ))}
           </div>
         </div>
         
-        {/* User info */}
-        <div className="border-t border-sidebar-border p-4">
+        {/* User info footer */}
+        <div className="p-4 border-t border-border/40 bg-card/60 backdrop-blur">
+          <button onClick={handleSignOut} className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-sm font-medium text-foreground hover:bg-red-50 hover:text-red-600 transition-all hover:shadow-md hover:scale-[1.01]">
+            <Avatar className="h-9 w-9 shadow-md"><AvatarFallback className="bg-gradient-primary text-white text-sm font-bold">{profile.username.slice(0, 2).toUpperCase()}</AvatarFallback></Avatar>
+            <div className="flex-1 text-left"><p className="font-bold text-sm">{profile.username}</p><p className="text-xs text-muted-foreground">Sign out</p></div>
+            <LogOut className="w-4 h-4 opacity-60" />
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Chat Area — Instagram-style feed */}
+      <main className="flex-1 flex flex-col bg-gradient-subtle min-w-0">
+        {/* Modern header with user profile */}
+        <header className="h-16 bg-card/80 backdrop-blur-xl border-b border-border/40 px-6 flex items-center justify-between shadow-sm sticky top-0 z-20">
           <div className="flex items-center gap-3">
-            <Avatar className="h-8 w-8">
-              <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-                {profile.username.slice(0, 2).toUpperCase()}
-              </AvatarFallback>
+            <Avatar className="h-10 w-10 shadow-lg ring-2 ring-gradient-primary/20 ring-offset-2">
+              <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentRoom}`} />
+              <AvatarFallback className="bg-gradient-to-br from-violet-500 to-indigo-600 text-white font-bold">{currentRoom.slice(0, 2).toUpperCase()}</AvatarFallback>
             </Avatar>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-sidebar-foreground truncate">{profile.username}</p>
-              <p className="text-xs text-success flex items-center gap-1">
-                <Circle className="w-2 h-2 fill-current" />
-                Online
-              </p>
+            <div>
+              <h1 className="text-lg font-extrabold leading-tight">{currentRoom}</h1>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {onlineUsers.length + 1} online</span>
+                <span>·</span>
+                <span className="flex items-center gap-1"><Circle className="w-1.5 h-1.5 fill-success text-success" /> Secure</span>
+              </div>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleSignOut}
-              className="h-8 w-8"
-              title="Sign out"
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <div className="h-16 border-b border-border bg-card px-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Hash className="w-5 h-5 text-muted-foreground" />
-            <h1 className="text-xl font-semibold hidden sm:block">{currentRoom}</h1>
           </div>
           <div className="flex items-center gap-3">
-            {user && (
-              <VoiceCall roomId={currentRoom} userId={user.id} username={profile?.username || 'User'} />
-            )}
-            <span className="text-sm text-muted-foreground hidden md:inline">Secure Chat Room</span>
+            <VoiceCall roomId={currentRoom} userId={user.id} username={profile?.username || 'User'} onCallStateChange={() => {}} />
+            <div className="hidden md:block text-xs font-medium text-muted-foreground bg-secondary/50 px-3 py-1.5 rounded-full">Social Chat</div>
           </div>
-        </div>
+        </header>
 
-        {/* Messages */}
-        <ScrollArea className="flex-1 p-6">
-          <div className="space-y-4 max-w-4xl mx-auto">
+        {/* Messages — modern feed style */}
+        <ScrollArea className="flex-1 p-6 md:p-8">
+          <div className="max-w-3xl mx-auto space-y-6">
+            {/* Welcome banner */}
+            <div className="text-center py-4">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-50 to-indigo-50 dark:from-violet-950/20 dark:to-indigo-950/20 rounded-full text-xs font-medium text-violet-600 dark:text-violet-300 shadow-sm border border-violet-100 dark:border-violet-900/20">
+                <Smile className="w-3.5 h-3.5" /> Welcome to {currentRoom} — say hello!
+              </div>
+            </div>
+            
             {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={cn(
-                  "flex gap-3 animate-slide-in-up",
-                  msg.username === 'System' && "justify-center"
-                )}
-              >
+              <div key={msg.id} className={cn("flex gap-3 animate-slide-in-up group", msg.username === 'System' && "justify-center")}>
                 {msg.username === 'System' ? (
-                  <div className="text-sm text-muted-foreground bg-muted/50 px-3 py-1 rounded-full">
+                  <div className="text-xs text-muted-foreground bg-muted/40 px-4 py-2 rounded-full shadow-inner border border-border/30 backdrop-blur">
                     {msg.content}
                   </div>
                 ) : (
                   <>
-                    <Avatar className="h-8 w-8 flex-shrink-0">
-                      <AvatarFallback className={cn(
-                        "text-xs",
-                        msg.user_id === user?.id
-                          ? "bg-primary text-primary-foreground" 
-                          : "bg-secondary text-secondary-foreground"
-                      )}>
-                        {msg.username.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-baseline gap-2">
-                        <span className="font-medium text-sm">{msg.username}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatTime(msg.created_at)}
-                        </span>
+                    <div className="flex-shrink-0 pt-1">
+                      <Avatar className="h-10 w-10 shadow-md ring-2 ring-white dark:ring-card">
+                        <AvatarFallback className={cn("text-sm font-bold shadow-inner", msg.user_id === user?.id ? "bg-gradient-to-br from-violet-500 to-indigo-600 text-white" : "bg-gradient-to-br from-amber-100 to-orange-100 text-amber-700 dark:from-amber-900 dark:to-orange-900 dark:text-amber-200")}>
+                          {msg.username.slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <span className="font-extrabold text-sm text-foreground">{msg.username}</span>
+                        <span className="text-[10px] text-muted-foreground font-medium">{formatTime(msg.created_at)}</span>
                       </div>
-                      <div className={cn(
-                        "inline-block px-4 py-2 rounded-2xl",
-                        msg.user_id === user?.id
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-secondary text-secondary-foreground"
-                      )}>
+                      <div className={cn("inline-block px-5 py-3 text-sm leading-relaxed shadow-md", msg.user_id === user?.id ? "bubble-own" : "bubble-other")}>
                         {msg.content}
                       </div>
+                      
+                      {/* Reactions */}
+                      <div className="flex items-center gap-2 mt-1.5 ml-1">
+                        {(messageReactions[msg.id] || []).map((r, i) => (
+                          <button key={i} onClick={() => addReaction(msg.id, r)} className="text-xs px-2 py-0.5 bg-white dark:bg-card rounded-full shadow-sm border border-border/40 hover:scale-110 transition-transform">{r}</button>
+                        ))}
+                        <div className="flex gap-0.5">
+                          {REACTIONS.map(r => (
+                            <button key={r} onClick={() => addReaction(msg.id, r)} className="text-xs hover:scale-125 transition-transform p-0.5 opacity-60 hover:opacity-100">{r}</button>
+                          ))}
+                        </div>
+                      </div>
+                      
                       {msg.file_url && (
-                        <div className="mt-2">
+                        <div className="mt-3 ml-1">
                           {msg.file_type?.startsWith('audio/') ? (
-                            <VoiceMessagePlayer url={msg.file_url} durationSec={msg.audio_duration ? msg.audio_duration / 1000 : 0} />
+                            <VoiceMessagePlayer url={msg.file_url} durationSec={0} />
                           ) : msg.file_type?.startsWith('image/') ? (
-                            <div className="relative inline-block">
-                              <img 
-                                src={msg.file_url} 
-                                alt={msg.file_name || 'Shared image'} 
-                                className="max-w-sm rounded-lg border border-border"
-                              />
-                              <a
-                                href={msg.file_url}
-                                download={msg.file_name}
-                                className="absolute top-2 right-2 p-2 bg-background/80 hover:bg-background rounded-lg border border-border"
-                              >
-                                <Download className="w-4 h-4" />
-                              </a>
+                            <div className="relative inline-block rounded-2xl overflow-hidden shadow-xl ring-1 ring-border/20">
+                              <img src={msg.file_url} alt={msg.file_name || 'Shared'} className="max-w-xs rounded-2xl hover:scale-[1.02] transition-transform duration-300" />
+                              <a href={msg.file_url} download={msg.file_name} className="absolute top-2 right-2 p-2 bg-black/30 hover:bg-black/60 rounded-xl backdrop-blur text-white transition-colors"><Download className="w-3.5 h-3.5" /></a>
                             </div>
                           ) : (
-                            <a
-                              href={msg.file_url}
-                              download={msg.file_name}
-                              className="inline-flex items-center gap-2 px-4 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors"
-                            >
-                              {msg.file_type?.includes('pdf') ? (
-                                <FileText className="w-4 h-4" />
-                              ) : (
-                                <File className="w-4 h-4" />
-                              )}
-                              <span className="text-sm">{msg.file_name}</span>
-                              <span className="text-xs text-muted-foreground">
-                                ({(msg.file_size ? msg.file_size / 1024 : 0).toFixed(1)} KB)
-                              </span>
-                              <Download className="w-4 h-4 ml-auto" />
+                            <a href={msg.file_url} download={msg.file_name} className="inline-flex items-center gap-2.5 px-4 py-2.5 bg-card hover:bg-secondary rounded-2xl shadow-md border border-border/40 transition-all hover:shadow-lg hover:-translate-y-0.5 text-sm font-medium">
+                              {msg.file_type?.includes('pdf') ? <FileText className="w-4 h-4 text-red-500" /> : <File className="w-4 h-4 text-blue-500" />}
+                              <span className="truncate max-w-[150px]">{msg.file_name}</span>
+                              <span className="text-[10px] text-muted-foreground">({(msg.file_size ? msg.file_size / 1024 : 0).toFixed(1)} KB)</span>
                             </a>
                           )}
                         </div>
@@ -882,14 +532,13 @@ export const AuthenticatedChat: React.FC = () => {
               </div>
             ))}
             
-            {/* Typing indicator */}
+            {/* Typing indicator — modern */}
             {typingUsers.length > 0 && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse-slow">
-                <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing</span>
+              <div className="flex items-center gap-3 pl-14 animate-pulse-slow">
+                <div className="w-2 h-2 rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 animate-bounce" />
+                <span className="text-xs font-medium text-muted-foreground">{typingUsers.join(', ')} is typing...</span>
                 <span className="flex gap-1">
-                  <span className="w-1 h-1 bg-current rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                  <span className="w-1 h-1 bg-current rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                  <span className="w-1 h-1 bg-current rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                  {[0, 1, 2].map(i => <span key={i} className="w-1 h-1 rounded-full bg-violet-400/60 animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />)}
                 </span>
               </div>
             )}
@@ -898,103 +547,39 @@ export const AuthenticatedChat: React.FC = () => {
           </div>
         </ScrollArea>
 
-        {/* Input */}
-        <div className="border-t border-border bg-card p-4">
-          <div className="max-w-4xl mx-auto">
+        {/* Modern input — Instagram-style */}
+        <div className="p-4 md:p-6 bg-card/80 backdrop-blur-xl border-t border-border/40 shadow-[0_-4px_20px_rgba(0,0,0,0.03)]">
+          <div className="max-w-3xl mx-auto">
             {selectedFile && (
-              <div className="mb-2 p-2 bg-secondary/50 rounded-lg flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {selectedFile.type.startsWith('image/') ? (
-                    <Image className="w-4 h-4" />
-                  ) : selectedFile.type.includes('pdf') ? (
-                    <FileText className="w-4 h-4" />
-                  ) : (
-                    <File className="w-4 h-4" />
-                  )}
-                  <span className="text-sm">{selectedFile.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    ({(selectedFile.size / 1024).toFixed(1)} KB)
-                  </span>
+              <div className="mb-3 p-3 bg-gradient-to-r from-violet-50 to-indigo-50 dark:from-violet-950/20 dark:to-indigo-950/20 rounded-2xl flex items-center justify-between border border-violet-100 dark:border-violet-900/20 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-primary flex items-center justify-center text-white shadow-md">
+                    {selectedFile.type.startsWith('image/') ? <Image className="w-4 h-4" /> : selectedFile.type.includes('pdf') ? <FileText className="w-4 h-4" /> : <File className="w-4 h-4" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold truncate max-w-[200px] md:max-w-[300px]">{selectedFile.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                  </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setSelectedFile(null);
-                    if (fileInputRef.current) fileInputRef.current.value = '';
-                  }}
-                >
-                  ✕
+                <Button variant="ghost" size="icon" onClick={() => { setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }} className="h-7 w-7 rounded-full hover:bg-red-50 hover:text-red-500">
+                  <span>✕</span>
                 </Button>
               </div>
             )}
-            <div className="flex gap-2">
-              <VoiceRecorder
-                onAudioReady={(blob, durationMs) => {
-                  setAudioBlob(blob);
-                  setAudioDuration(durationMs);
-                }}
-                disabled={uploading}
-                className="flex-shrink-0"
-              />
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    const file = e.target.files[0];
-                    // 10MB limit
-                    if (file.size > 10 * 1024 * 1024) {
-                      toast({
-                        title: "File too large",
-                        description: "Please select a file smaller than 10MB",
-                        variant: "destructive"
-                      });
-                      return;
-                    }
-                    setSelectedFile(file);
-                  }
-                }}
-                className="hidden"
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="flex-shrink-0"
-              >
-                <Paperclip className="w-4 h-4" />
-              </Button>
-              <Input
-                ref={messageInputRef}
-                type="text"
-                placeholder={`Message #${currentRoom}`}
-                value={message}
-                onChange={(e) => {
-                  setMessage(e.target.value);
-                  handleTyping();
-                }}
-                onKeyPress={(e) => e.key === 'Enter' && !uploading && handleSendMessage()}
-                className="flex-1 bg-background border-input"
-                disabled={uploading}
-              />
-              <Button
-                onClick={handleSendMessage}
-                disabled={(!message.trim() && !selectedFile && !audioBlob) || uploading}
-                className="bg-primary hover:bg-primary-glow transition-colors"
-              >
-                {uploading ? (
-                  <div className="w-4 h-4 border-2 border-current border-r-transparent rounded-full animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
+            <div className="flex gap-3 items-end">
+              <VoiceRecorder onAudioReady={(blob, durationMs) => { setAudioBlob(blob); setAudioDuration(durationMs); }} disabled={uploading} className="flex-shrink-0" />
+              <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar" onChange={e => { if (e.target.files?.[0]) { const f = e.target.files[0]; if (f.size > 10 * 1024 * 1024) { toast({ title: "File too large", description: "Please select a file smaller than 10MB", variant: "destructive" }); return; } setSelectedFile(f); } }} className="hidden" />
+              <Button variant="outline" size="icon" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="rounded-full h-11 w-11 shadow-sm border-border/60 hover:bg-secondary hover:scale-105 transition-all" title="Attach file"><Paperclip className="w-4 h-4 text-muted-foreground" /></Button>
+              <div className="flex-1 relative">
+                <Input ref={messageInputRef} type="text" placeholder={`Message ${currentRoom}...`} value={message} onChange={e => { setMessage(e.target.value); handleTyping(); }} onKeyDown={e => e.key === 'Enter' && !uploading && handleSendMessage()} className="h-11 rounded-full bg-white dark:bg-card px-5 shadow-md border-border/30 focus-visible:ring-violet-400 focus-visible:ring-2 focus-visible:border-transparent text-sm pr-12" disabled={uploading} />
+              </div>
+              <Button onClick={handleSendMessage} disabled={(!message.trim() && !selectedFile && !audioBlob) || uploading} className="h-11 w-11 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:brightness-110 hover:scale-110 shadow-xl shadow-violet-500/25 transition-all" size="icon">
+                {uploading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="w-4 h-4 text-white" />}
               </Button>
             </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 };
