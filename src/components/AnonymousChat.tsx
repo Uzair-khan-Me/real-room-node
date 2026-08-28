@@ -16,7 +16,6 @@ import { useNavigate } from 'react-router-dom';
 interface Message {
   id: string; username: string; content: string; created_at: string;
   room_id: string; file_url?: string | null; file_name?: string | null;
-  file_type?: string | null; file_size?: number | null; audio_duration?: number | null;
 }
 
 interface AnonymousChatProps { roomCode: string; username: string; onExit: () => void; }
@@ -119,7 +118,7 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
         const { error } = await supabase.from('anonymous_messages').insert({
           username, content: content || `Shared a file: ${fileName}`, room_id: roomInfo.id,
           file_url: fileUrl, file_name: fileName, file_type: fileType, file_size: fileSize,
-          audio_duration: audioDuration > 0 ? audioDuration : null,
+          
         });
         if (error) { toast({ title: "Send failed", description: error.message, variant: "destructive" }); return; }
         setMessage('');

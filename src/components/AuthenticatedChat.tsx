@@ -23,7 +23,6 @@ interface Message {
   room_id: string; user_id: string | null;
   file_url?: string | null; file_name?: string | null;
   file_type?: string | null; file_size?: number | null;
-  audio_duration?: number | null;
 }
 
 interface Room { id: string; name: string; type: 'public' | 'private'; }
@@ -217,7 +216,7 @@ export const AuthenticatedChat: React.FC = () => {
         file_name: fileName,
         file_type: fileType,
         file_size: fileSize,
-        audio_duration: audioDuration > 0 ? audioDuration : null,
+        
       };
 
       if (selectedFile) { setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }
