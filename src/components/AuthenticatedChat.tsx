@@ -137,8 +137,11 @@ export const AuthenticatedChat: React.FC = () => {
       const { data: messages, error } = await supabase.from('messages').select('*').eq('room_id', currentRoom).order('created_at', { ascending: true }).limit(100);
       if (error) { toast({ title: "Error loading messages", description: error.message, variant: "destructive" }); return; }
       const userIds = [...new Set((messages || []).filter((m: any) => m.user_id).map((m: any) => m.user_id))];
-      const { data: profiles } = await supabase.from('profiles').select('id, username').in('id', userIds);
-      const profileMap = new Map((profiles || []).map((p: any) => [p.id, p.username]));
+      const profileMap = new Map();
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase.from('profiles').select('id, username').in('id', userIds);
+        (profiles || []).forEach((p: any) => profileMap.set(p.id, p.username));
+      }
       setMessages((messages || []).map((msg: any) => ({
         ...msg,
         username: msg.user_id ? (profileMap.get(msg.user_id) || msg.username || 'Unknown') : (msg.username || 'System')
@@ -152,8 +155,11 @@ export const AuthenticatedChat: React.FC = () => {
       const { data: presence, error } = await supabase.from('user_presence').select('*').eq('room_id', currentRoom).gte('last_seen', new Date(Date.now() - 60000).toISOString());
       if (error) return;
       const userIds = [...new Set((presence || []).filter((p: any) => p.user_id).map((p: any) => p.user_id))];
-      const { data: profiles } = await supabase.from('profiles').select('id, username').in('id', userIds);
-      const map = new Map((profiles || []).map((p: any) => [p.id, p.username]));
+      const map = new Map();
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase.from('profiles').select('id, username').in('id', userIds);
+        (profiles || []).forEach((p: any) => map.set(p.id, p.username));
+      }
       const transformed = (presence || []).map((p: any) => ({ ...p, username: p.user_id ? (map.get(p.user_id) || p.username || 'Unknown') : (p.username || 'Unknown') }));
       setOnlineUsers(transformed.filter((p: any) => p.user_id !== user?.id));
       setTypingUsers(transformed.filter((p: any) => p.is_typing && p.user_id !== user?.id).map((p: any) => p.username));
