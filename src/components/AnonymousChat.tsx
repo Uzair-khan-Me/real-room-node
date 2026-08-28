@@ -204,7 +204,7 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
                       {msg.file_url && (
                         <div className="mt-2.5 ml-0.5">
                           {msg.file_type?.startsWith('audio/') ? (
-                            <VoiceMessagePlayer url={msg.file_url} durationSec={msg.audio_duration ? msg.audio_duration / 1000 : 0} />
+                            <VoiceMessagePlayer url={msg.file_url} durationSec={0} />
                           ) : msg.file_type?.startsWith('image/') ? (
                             <a href={msg.file_url} className="inline-block rounded-2xl overflow-hidden shadow-xl ring-1 ring-border/20 hover:scale-[1.02] transition-transform duration-300">
                               <img src={msg.file_url} alt={msg.file_name || 'Shared'} className="max-w-[220px] md:max-w-xs rounded-2xl" />
