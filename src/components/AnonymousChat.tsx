@@ -227,6 +227,12 @@ export const AnonymousChat: React.FC<AnonymousChatProps> = ({ roomCode, username
                 )}
               </div>
             ))}
+            {typingUsers.length > 0 && (
+              <div className="flex items-center gap-2 pl-12 animate-pulse-slow">
+                <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 animate-bounce" />
+                <span className="text-xs font-medium text-muted-foreground">{typingUsers.join(', ')} is typing...</span>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
